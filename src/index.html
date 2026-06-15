@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>File Manager</title>
+<style>
+  :root {
+    --bg-root: #1a1b1e;
+    --bg-surface: #212327;
+    --bg-sidebar: #1c1d20;
+    --bg-input: #282a2e;
+    --bg-header: #25272b;
+    --border: #2d2f33;
+    --border-active: #4a9eff;
+    --accent: #4a9eff;
+    --accent-dim: #2a5f9f;
+    --text-primary: #d4d4d4;
+    --text-secondary: #8a8a8a;
+    --text-tertiary: #5c5d61;
+    --folder: #dcb67a;
+    --file-code: #6a9955;
+    --file-image: #c586c0;
+    --file-doc: #569cd6;
+    --file-generic: #8a8a8a;
+    --hover: rgba(255,255,255,0.04);
+    --selected: rgba(74,158,255,0.12);
+    --danger: #f44747;
+    --radius: 5px;
+    --radius-sm: 3px;
+    --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+    --font-mono: 'SF Mono', Menlo, Monaco, monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden;background:var(--bg-root);color:var(--text-primary);font-family:var(--font);font-size:12.5px;line-height:1.5;user-select:none;-webkit-user-select:none}
+
+  /* Toolbar */
+  .toolbar{display:flex;align-items:center;height:32px;padding:0 10px;background:var(--bg-surface);border-bottom:1px solid var(--border);gap:8px;flex-shrink:0}
+  .toolbar-title{font-weight:600;font-size:11px;color:var(--text-secondary)}
+  .toolbar .sep{width:1px;height:16px;background:var(--border)}
+  .toolbar .hint{font-size:10px;color:var(--text-tertiary)}
+  .toolbar kbd{display:inline-block;background:var(--bg-input);border:1px solid var(--border);border-radius:3px;padding:0 4px;font-family:var(--font-mono);font-size:9px;color:var(--text-secondary);margin:0 1px}
+  .badge{font-size:10px;color:var(--accent);margin-left:auto}
+
+  /* Grid */
+  .grid{flex:1;display:grid;grid-template-columns:1fr 1px 1fr;grid-template-rows:1fr 1px 1fr;position:relative}
+  .pane{background:var(--bg-root);display:flex;flex-direction:column;overflow:hidden;border:2px solid var(--border);transition:border-color .12s}
+  .pane.active{border-color:var(--border-active);z-index:2}
+  .divider-v{grid-row:1/4;grid-column:2;cursor:col-resize;background:var(--border);z-index:5}
+  .divider-h{grid-row:2;grid-column:1/4;cursor:row-resize;background:var(--border);z-index:5}
+  .divider-v:hover,.divider-h:hover{background:var(--accent-dim)}
+
+  /* Pane header */
+  .pane-hdr{display:flex;align-items:center;height:32px;padding:0 6px;background:var(--bg-surface);border-bottom:1px solid var(--border);gap:2px;flex-shrink:0}
+  .pane-idx{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--text-tertiary);background:var(--bg-input);border-radius:3px;padding:1px 6px;flex-shrink:0}
+  .pane.active .pane-idx{color:var(--accent)}
+  .nav-btn{width:22px;height:22px;display:flex;align-items:center;justify-content:center;background:none;border:none;color:var(--text-secondary);cursor:pointer;border-radius:var(--radius-sm);font-size:12px;flex-shrink:0;transition:all .12s}
+  .nav-btn:hover{background:var(--hover);color:var(--text-primary)}
+  .nav-sep{width:1px;height:16px;background:var(--border);margin:0 3px}
+  .breadcrumb{display:flex;align-items:center;gap:1px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}
+  .breadcrumb::-webkit-scrollbar{display:none}
+  .breadcrumb-seg{font-size:11px;color:var(--text-secondary);cursor:pointer;padding:2px 5px;border-radius:var(--radius-sm);white-space:nowrap;transition:all .12s}
+  .breadcrumb-seg:hover{background:var(--hover);color:var(--text-primary)}
+  .breadcrumb-seg.root{font-weight:600;color:var(--folder)}
+  .breadcrumb-chevron{color:var(--text-tertiary);font-size:9px;flex-shrink:0}
+
+  /* File list */
+  .file-area{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0}
+  .file-area:focus{outline:none}
+  .col-hdrs{display:flex;align-items:center;height:24px;padding:0 8px;background:var(--bg-header);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:4}
+  .col-h{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-tertiary);cursor:pointer;padding:0 6px;white-space:nowrap}
+  .col-h:hover{color:var(--text-secondary)}
+  .col-name{flex:1;min-width:80px}
+  .col-size{width:80px;text-align:right}
+  .col-date{width:130px}
+
+  .file-row{display:flex;align-items:center;height:24px;padding:0 8px;cursor:pointer;gap:6px;transition:background 60ms;position:relative;z-index:1}
+  .file-row:hover{background:var(--hover)}
+  .file-row.selected{background:var(--selected)}
+  .file-row .chev{width:12px;font-size:8px;color:var(--text-tertiary);flex-shrink:0;text-align:center;transition:transform .12s}
+  .file-row .chev.open{transform:rotate(90deg)}
+  .file-icon{width:16px;text-align:center;flex-shrink:0;font-size:13px}
+  .file-icon.folder{color:var(--folder)}
+  .file-icon.code{color:var(--file-code)}
+  .file-icon.image{color:var(--file-image)}
+  .file-icon.doc{color:var(--file-doc)}
+  .file-icon.generic{color:var(--file-generic)}
+  .file-name{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+  .file-size{font-size:10px;color:var(--text-tertiary);font-family:var(--font-mono);width:80px;text-align:right;flex-shrink:0}
+  .file-date{font-size:10px;color:var(--text-tertiary);width:130px;flex-shrink:0;white-space:nowrap}
+
+  /* Inline input */
+  .inline-row{display:none;align-items:center;height:24px;padding:0 8px;gap:6px}
+  .inline-row input{flex:1;height:20px;background:var(--bg-input);border:1px solid var(--accent);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font);font-size:11px;padding:0 6px;outline:none}
+
+  /* Status */
+  .pane-status{display:flex;align-items:center;height:20px;padding:0 10px;font-size:10px;color:var(--text-tertiary);background:var(--bg-surface);border-top:1px solid var(--border);gap:8px;flex-shrink:0}
+  .pane-status .err{color:var(--danger)}
+
+  /* Context menu */
+  .ctx{position:fixed;background:#25272b;border:1px solid var(--border);border-radius:8px;padding:4px;min-width:180px;box-shadow:0 8px 32px rgba(0,0,0,.55);z-index:100;display:none}
+  .ctx-item{display:flex;align-items:center;gap:8px;padding:5px 10px;font-size:12px;border-radius:5px;cursor:pointer;transition:background 80ms}
+  .ctx-item:hover{background:var(--selected)}
+  .ctx-item .sc{font-size:10px;color:var(--text-tertiary);font-family:var(--font-mono);margin-left:auto}
+  .ctx-item.danger{color:var(--danger)}
+  .ctx-item.danger:hover{background:rgba(244,71,71,.1)}
+  .ctx-sep{height:1px;background:var(--border);margin:3px 6px}
+  .ctx-item.disabled{opacity:.35;pointer-events:none}
+
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg-surface);border:1px solid var(--accent-dim);border-radius:8px;padding:6px 16px;font-size:12px;z-index:200;pointer-events:none;transition:opacity .2s}
+  .toast.hidden{opacity:0}
+
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="toolbar-title">File Manager</span>
+  <span class="sep"></span>
+  <span class="hint"><kbd>⌘1</kbd>-<kbd>⌘4</kbd> panes</span>
+  <span class="sep"></span>
+  <span class="hint">←→↑↓ nav</span>
+  <span class="badge" id="buildBadge">loading…</span>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="ctx" id="ctxMenu"></div>
+<div class="toast hidden" id="toast"></div>
+
+<script>
+// ── Tauri API detection ──
+let invoke;
+const isTauri = !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
+if (isTauri) {
+  try {
+    const t = window.__TAURI__ || window.__TAURI_INTERNALS__;
+    invoke = t.core ? t.core.invoke : t.invoke;
+    if (!invoke && t.tauri) invoke = t.tauri.invoke;
+    document.getElementById('buildBadge').textContent = 'tauri ✓';
+  } catch(e) {
+    isTauri = false;
+  }
+}
+if (!invoke) {
+  // Fallback for browser testing
+  invoke = (cmd, args) => {
+    console.warn('Tauri not available, using mock:', cmd, args);
+    return mockInvoke(cmd, args);
+  };
+  document.getElementById('buildBadge').textContent = 'mock (browser)';
+}
+
+// ── Mock backend for browser testing ──
+const mockFS = {
+  '/Users/pxl': [
+    {name:'Desktop',is_dir:true,size:0,modified:'Jun 12, 2026',children:[]},
+    {name:'Documents',is_dir:true,size:0,modified:'Jun 10, 2026',children:[]},
+    {name:'Downloads',is_dir:true,size:0,modified:'Jun 11, 2026',children:[]},
+    {name:'projects',is_dir:true,size:0,modified:'Jun 12, 2026',children:[]},
+    {name:'.zshrc',is_dir:false,size:1240,modified:'May 20, 2026',kind:'code'},
+    {name:'.gitconfig',is_dir:false,size:420,modified:'Apr 15, 2026',kind:'code'},
+  ],
+  '/Users/pxl/projects': [
+    {name:'file-manager',is_dir:true,size:0,modified:'Jun 13, 2026',children:[]},
+    {name:'my-app',is_dir:true,size:0,modified:'Jun 8, 2026',children:[]},
+    {name:'README.md',is_dir:false,size:847,modified:'Jun 1, 2026',kind:'doc'},
+  ],
+  '/Users/pxl/projects/file-manager': [
+    {name:'src',is_dir:true,size:0,modified:'Jun 13, 2026',children:[]},
+    {name:'src-tauri',is_dir:true,size:0,modified:'Jun 13, 2026',children:[]},
+    {name:'package.json',is_dir:false,size:2100,modified:'Jun 13, 2026',kind:'code'},
+    {name:'index.html',is_dir:false,size:0,modified:'Jun 13, 2026',kind:'code'},
+  ],
+  '/Users/pxl/Documents': [
+    {name:'Work',is_dir:true,size:0,modified:'Jun 5, 2026',children:[]},
+    {name:'Resume-2026.pdf',is_dir:false,size:124000,modified:'Mar 20, 2026',kind:'doc'},
+    {name:'notes.txt',is_dir:false,size:1200,modified:'Jun 10, 2026',kind:'generic'},
+  ],
+  '/Users/pxl/Downloads': [
+    {name:'Discord.dmg',is_dir:false,size:189000000,modified:'Jun 11, 2026',kind:'generic'},
+    {name:'photo.jpg',is_dir:false,size:3200000,modified:'Jun 10, 2026',kind:'image'},
+    {name:'invoice.pdf',is_dir:false,size:245000,modified:'May 28, 2026',kind:'doc'},
+  ],
+};
+function mockInvoke(cmd, args) {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      const path = args.path || '';
+      if (cmd === 'list_dir') {
+        const entries = mockFS[path] || [];
+        resolve(entries.map(e => ({...e, path: path + '/' + e.name})));
+      } else if (cmd === 'create_file' || cmd === 'create_dir') {
+        const name = path.split('/').pop();
+        if (!mockFS[path.replace('/'+name,'')]) mockFS[path.replace('/'+name,'')] = [];
+        mockFS[path.replace('/'+name,'')].unshift({
+          name, is_dir: cmd === 'create_dir', size: cmd === 'create_dir' ? 0 : 1,
+          modified: new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
+          kind: cmd === 'create_dir' ? null : 'generic', children: cmd === 'create_dir' ? [] : undefined
+        });
+        resolve(null);
+      } else if (cmd === 'delete_item') {
+        const dir = path.substring(0, path.lastIndexOf('/'));
+        const name = path.split('/').pop();
+        if (mockFS[dir]) mockFS[dir] = mockFS[dir].filter(e => e.name !== name);
+        resolve(null);
+      } else if (cmd === 'rename_item') {
+        resolve(null);
+      } else if (cmd === 'open_file') {
+        console.log('Would open:', path);
+        resolve(null);
+      } else {
+        resolve(null);
+      }
+    }, 50);
+  });
+}
+
+// ── State ──
+const panes = [
+  { path: '~', entries: [], expanded: {}, selected: null, sort: 'name', asc: true, loading: false, error: null },
+  { path: '~', entries: [], expanded: {}, selected: null, sort: 'name', asc: true, loading: false, error: null },
+  { path: '~', entries: [], expanded: {}, selected: null, sort: 'name', asc: true, loading: false, error: null },
+  { path: '~', entries: [], expanded: {}, selected: null, sort: 'name', asc: true, loading: false, error: null },
+];
+let activePane = 0;
+let clipboard = null;
+let ctxTarget = null;
+const history = [[],[],[],[]];
+const fwdStack = [[],[],[],[]];
+
+// ── Render ──
+function getKind(name) {
+  const ext = (name.split('.').pop()||'').toLowerCase();
+  if ('ts|tsx|js|jsx|json|css|html|rs|py|rb|go|java|c|h|cpp|swift|yaml|yml|toml|xml|sh|bash|zsh|sql|vue|svelte|mdx|cjs|mjs'.split('|').includes(ext)) return 'code';
+  if ('png|jpg|jpeg|gif|svg|webp|ico|bmp|avif'.split('|').includes(ext)) return 'image';
+  if ('pdf|doc|docx|xls|xlsx|ppt|pptx|md|txt|rtf|csv|pages|numbers|key'.split('|').includes(ext)) return 'doc';
+  return 'generic';
+}
+function fmtSize(bytes) {
+  if (!bytes || bytes === 0) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  if (bytes < 1073741824) return (bytes/1048576).toFixed(1) + ' MB';
+  return (bytes/1073741824).toFixed(1) + ' GB';
+}
+function getIcon(e) {
+  if (e.is_dir) return '📁';
+  const k = e.kind || getKind(e.name);
+  return {code:'📄',image:'🖼',doc:'📋',generic:'📄'}[k] || '📄';
+}
+function getIconCls(e) {
+  if (e.is_dir) return 'folder';
+  const k = e.kind || getKind(e.name);
+  return k || 'generic';
+}
+
+function renderPane(pi) {
+  const p = panes[pi];
+  const container = document.getElementById('pane'+pi);
+  if (!container) return;
+
+  // Header
+  const hdr = container.querySelector('.pane-hdr');
+  const bc = hdr.querySelector('.breadcrumb');
+  const segments = p.path === '/' ? ['/'] : p.path.replace(/\/+$/,'').split('/').filter(Boolean);
+  const display = p.path.startsWith('/') ? ['/', ...(p.path==='/'?[]:p.path.slice(1).split('/'))] : segments;
+  if (p.path === '~') display.length = 0; // handled below
+
+  // Resolve display segments
+  let segs;
+  if (p.path === '~') segs = ['~'];
+  else if (p.path === '/') segs = ['/'];
+  else if (p.path.startsWith('/')) {
+    segs = ['/'];
+    p.path.slice(1).split('/').filter(Boolean).forEach(s => segs.push(s));
+  } else segs = p.path.split('/').filter(Boolean);
+
+  bc.innerHTML = segs.map((s, i) => {
+    const isRoot = i === 0;
+    return `<span class="breadcrumb-seg${isRoot?' root':''}" data-seg="${i}">${s}</span>` +
+      (i < segs.length - 1 ? '<span class="breadcrumb-chevron">›</span>' : '');
+  }).join('');
+
+  // Wire breadcrumb clicks
+  bc.querySelectorAll('.breadcrumb-seg').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const idx = parseInt(el.dataset.seg);
+      const newPath = segs[0] === '/' ? '/' + segs.slice(1, idx+1).join('/') : segs.slice(0, idx+1).join('/');
+      navigateTo(pi, newPath || '/');
+    };
+  });
+
+  // Sort entries
+  const sorted = [...p.entries].sort((a,b) => {
+    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+    const va = p.sort === 'name' ? a.name.toLowerCase() : p.sort === 'size' ? a.size : p.sort === 'date' ? (a.modified||'') : a.name;
+    const vb = p.sort === 'name' ? b.name.toLowerCase() : p.sort === 'size' ? b.size : p.sort === 'date' ? (b.modified||'') : b.name;
+    if (typeof va === 'number') return p.asc ? va - vb : vb - va;
+    return p.asc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+  });
+
+  // Flat list (expand dirs)
+  const flat = [];
+  function walk(items, depth) {
+    for (const e of items) {
+      flat.push({...e, _depth:depth});
+      if (e.is_dir && e.children && p.expanded[e.name]) walk(e.children, depth+1);
+    }
+  }
+  walk(sorted, 0);
+
+  // File area
+  const fa = container.querySelector('.file-area');
+  let html = '';
+  html += `<div class="inline-row" id="inline${pi}"><span style="width:16px"></span><input id="inlineInput${pi}" placeholder="Name…"></div>`;
+
+  for (const e of flat) {
+    const sel = p.selected === e.path;
+    html += `<div class="file-row${sel?' selected':''}" data-path="${esc(e.path)}" data-depth="${e._depth}"
+      style="padding-left:${8+e._depth*14}px" data-isdir="${e.is_dir}">
+      <span class="chev${e.is_dir&&e.children&&e.children.length>0?(p.expanded[e.name]?' open':''):''}" data-expand="1">${e.is_dir&&e.children&&e.children.length>0?'▸':''}</span>
+      <span class="file-icon ${getIconCls(e)}">${getIcon(e)}</span>
+      <span class="file-name">${e.name}</span>
+      <span class="file-size">${e.is_dir?'—':fmtSize(e.size)}</span>
+      <span class="file-date">${e.modified||'—'}</span>
+    </div>`;
+  }
+
+  if (flat.length === 0 && !p.loading) {
+    html += '<div style="text-align:center;padding:40px;color:var(--text-tertiary)">📂<br>Empty folder</div>';
+  }
+  if (p.loading) {
+    html = '<div style="text-align:center;padding:40px;color:var(--text-tertiary)">⏳ Loading…</div>';
+  }
+  if (p.error) {
+    html = `<div style="text-align:center;padding:20px;color:var(--danger)">Error: ${esc(p.error)}</div>`;
+  }
+
+  fa.innerHTML = html;
+
+  // Wire file row events
+  fa.querySelectorAll('.file-row').forEach(row => {
+    row.onclick = (ev) => {
+      ev.stopPropagation();
+      const path = row.dataset.path;
+      const isDir = row.dataset.isdir === 'true';
+      const name = path.split('/').pop();
+      const entry = p.entries.find(e => e.path === path) || (isDir ? {name,is_dir:true,path} : {name,is_dir:false,path});
+
+      // Detect double-click (400ms)
+      const now = Date.now();
+      if (p._lastClick === path && (now - p._lastTime) < 400) {
+        // Double click
+        if (isDir) {
+          navigateTo(pi, path);
+        } else {
+          invoke('open_file', {path}).catch(() => {});
+          flashStatus(pi, `Opening "${name}"…`);
+        }
+        p._lastClick = null;
+        return;
+      }
+      p._lastClick = path;
+      p._lastTime = now;
+
+      // Single click: select
+      panes[pi].selected = path;
+      renderPane(pi);
+    };
+    row.oncontextmenu = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const path = row.dataset.path;
+      const isDir = row.dataset.isdir === 'true';
+      panes[pi].selected = path;
+      renderPane(pi);
+      showCtx(ev.clientX, ev.clientY, pi, {path, is_dir: isDir === 'true'});
+    };
+  });
+
+  // Expand chevron clicks
+  fa.querySelectorAll('[data-expand]').forEach(ch => {
+    ch.onclick = (ev) => {
+      ev.stopPropagation();
+      const row = ch.closest('.file-row');
+      const name = row.dataset.path.split('/').pop();
+      if (p.expanded[name]) delete p.expanded[name];
+      else p.expanded[name] = true;
+      renderPane(pi);
+    };
+  });
+
+  // Column header sort
+  fa.querySelector('.col-hdrs').querySelectorAll('.col-h').forEach(h => {
+    h.onclick = (ev) => {
+      ev.stopPropagation();
+      const sk = h.dataset.sort;
+      if (p.sort === sk) p.asc = !p.asc;
+      else { p.sort = sk; p.asc = true; }
+      renderPane(pi);
+    };
+  });
+
+  // Status bar
+  const status = container.querySelector('.pane-status');
+  const total = countAll(p.entries);
+  status.innerHTML = p.error
+    ? `<span class="err">Error: ${esc(p.error)}</span>`
+    : `<span>${total} item${total!==1?'s':''} · ${p.path}</span>`;
+}
+
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function countAll(items) { let n=0; for(const e of items){n++;if(e.children)n+=countAll(e.children);} return n; }
+
+// ── Navigation ──
+async function loadDir(pi, path) {
+  panes[pi].loading = true;
+  panes[pi].error = null;
+  renderPane(pi);
+  try {
+    const entries = await invoke('list_dir', {path, sortBy:'name', ascending:true});
+    const resolvedPath = entries.length > 0 ? entries[0].path.replace(/\/[^/]+$/,'') : path;
+    // Detect resolved path
+    panes[pi].path = path; // keep tilde if that's what user wants
+    panes[pi].entries = entries.map(e => ({...e, kind: e.kind || getKind(e.name)}));
+    panes[pi].loading = false;
+    panes[pi].selected = null;
+    renderPane(pi);
+  } catch(err) {
+    panes[pi].loading = false;
+    panes[pi].error = String(err);
+    renderPane(pi);
+  }
+}
+
+async function navigateTo(pi, path) {
+  const prev = panes[pi].path;
+  if (prev && prev !== path) {
+    history[pi].push(prev);
+    fwdStack[pi] = [];
+  }
+  panes[pi].path = path;
+  panes[pi].expanded = {};
+  await loadDir(pi, path);
+}
+
+function navUp(pi) {
+  const p = panes[pi].path;
+  if (p === '/' || p === '~') return;
+  const parent = p.substring(0, p.lastIndexOf('/')) || '/';
+  navigateTo(pi, parent);
+}
+function navInto(pi) {
+  const sel = panes[pi].selected;
+  if (!sel) return;
+  const e = panes[pi].entries.find(x => x.path === sel);
+  if (e && e.is_dir) navigateTo(pi, sel);
+}
+function navBack(pi) {
+  if (history[pi].length === 0) return;
+  fwdStack[pi].push(panes[pi].path);
+  const prev = history[pi].pop();
+  panes[pi].path = prev;
+  panes[pi].expanded = {};
+  loadDir(pi, prev);
+}
+function navForward(pi) {
+  if (fwdStack[pi].length === 0) return;
+  history[pi].push(panes[pi].path);
+  const next = fwdStack[pi].pop();
+  panes[pi].path = next;
+  panes[pi].expanded = {};
+  loadDir(pi, next);
+}
+
+// ── CRUD ──
+function startCreate(pi, type) {
+  setActive(pi);
+  const row = document.getElementById('inline'+pi);
+  const inp = document.getElementById('inlineInput'+pi);
+  row.style.display = 'flex';
+  inp.placeholder = type === 'file' ? 'New file name…' : 'New folder name…';
+  inp.dataset.type = type;
+  inp.value = '';
+  inp.focus();
+  inp.onkeydown = async (e) => {
+    if (e.key === 'Enter') {
+      const name = inp.value.trim();
+      if (name) {
+        const fullPath = panes[pi].path === '~' ? name : panes[pi].path + '/' + name;
+        try {
+          await invoke(type === 'file' ? 'create_file' : 'create_dir', {path: fullPath});
+          flashStatus(pi, `Created ${type==='folder'?'folder':'file'}: "${name}"`);
+          await loadDir(pi, panes[pi].path);
+        } catch(err) { flashStatus(pi, 'Error: '+String(err)); }
+      }
+      row.style.display = 'none';
+    }
+    if (e.key === 'Escape') row.style.display = 'none';
+  };
+}
+
+async function deleteSelected(pi) {
+  const path = panes[pi].selected;
+  if (!path) return;
+  try {
+    await invoke('delete_item', {path});
+    flashStatus(pi, `Deleted "${path.split('/').pop()}"`);
+    await loadDir(pi, panes[pi].path);
+  } catch(err) { flashStatus(pi, 'Error: '+String(err)); }
+}
+
+// ── Context Menu ──
+function showCtx(x, y, pi, entry) {
+  ctxTarget = {pi, entry};
+  const menu = document.getElementById('ctxMenu');
+  const hasSel = !!entry;
+  menu.innerHTML = `
+    <div class="ctx-item${!hasSel?' disabled':''}" data-action="open">↗ Open<span class="sc">⌘O</span></div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item${!hasSel?' disabled':''}" data-action="copy">📋 Copy<span class="sc">⌘C</span></div>
+    <div class="ctx-item${!clipboard?' disabled':''}" data-action="paste">📄 Paste<span class="sc">⌘V</span></div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" data-action="new-file">📝 New File<span class="sc">⌘N</span></div>
+    <div class="ctx-item" data-action="new-folder">📁 New Folder</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item${!hasSel?' disabled':''}" data-action="rename">✎ Rename<span class="sc">⏎</span></div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item danger${!hasSel?' disabled':''}" data-action="delete">🗑 Delete<span class="sc">⌫</span></div>
+  `;
+  menu.style.display = 'block';
+  menu.style.left = Math.min(x, innerWidth-200) + 'px';
+  menu.style.top = Math.min(y, innerHeight-280) + 'px';
+
+  menu.querySelectorAll('.ctx-item:not(.disabled)').forEach(item => {
+    item.onclick = () => ctxAction(item.dataset.action);
+  });
+}
+function hideCtx() { document.getElementById('ctxMenu').style.display = 'none'; ctxTarget = null; }
+async function ctxAction(action) {
+  if (!ctxTarget) return;
+  const {pi, entry} = ctxTarget;
+  switch(action) {
+    case 'open':
+      if (entry && !entry.is_dir) { await invoke('open_file', {path: entry.path}).catch(()=>{}); flashStatus(pi, `Opening "${entry.path.split('/').pop()}"…`); }
+      else if (entry && entry.is_dir) navigateTo(pi, entry.path);
+      break;
+    case 'copy': clipboard = entry; showToast(`Copied "${entry.path.split('/').pop()}"`); break;
+    case 'paste':
+      if (clipboard) {
+        flashStatus(pi, `Pasted "${clipboard.path.split('/').pop()}"`);
+        clipboard = null;
+      }
+      break;
+    case 'new-file': startCreate(pi, 'file'); break;
+    case 'new-folder': startCreate(pi, 'folder'); break;
+    case 'rename':
+      if (entry) flashStatus(pi, `Rename not implemented in v1`);
+      break;
+    case 'delete': deleteSelected(pi); break;
+  }
+  hideCtx();
+}
+
+// ── UI Helpers ──
+function setActive(idx) {
+  activePane = idx;
+  document.querySelectorAll('.pane').forEach((p,i) => p.classList.toggle('active', i===idx));
+  hideCtx();
+}
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.add('hidden'), 2000);
+}
+function flashStatus(pi, msg) {
+  const status = document.getElementById('pane'+pi).querySelector('.pane-status');
+  status.innerHTML = `<span style="color:var(--accent)">${esc(msg)}</span>`;
+  setTimeout(() => renderPane(pi), 2500);
+}
+
+// ── Build layout ──
+function buildGrid() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  // 4 panes
+  for (let i = 0; i < 4; i++) {
+    const pos = ['tl','tr','bl','br'][i];
+    const col = i % 2 === 0 ? 1 : 3;
+    const row = i < 2 ? 1 : 3;
+    grid.innerHTML += `
+      <div class="pane ${pos}${i===0?' active':''}" id="pane${i}" style="grid-row:${row};grid-column:${col}">
+        <div class="pane-hdr">
+          <span class="pane-idx">⌘${i+1}</span>
+          <button class="nav-btn" title="Back" data-nav="back">←</button>
+          <button class="nav-btn" title="Forward" data-nav="fwd">→</button>
+          <span class="nav-sep"></span>
+          <button class="nav-btn" title="Up" data-nav="up">↑</button>
+          <button class="nav-btn" title="Into" data-nav="into">↓</button>
+          <span class="nav-sep"></span>
+          <div class="breadcrumb"></div>
+          <button class="nav-btn" title="New File" data-create="file" style="margin-left:auto">+</button>
+          <button class="nav-btn" title="New Folder" data-create="folder">⌂</button>
+        </div>
+        <div class="file-area" tabindex="0">
+          <div class="col-hdrs">
+            <span class="col-h col-name" data-sort="name">Name</span>
+            <span class="col-h col-size" data-sort="size">Size</span>
+            <span class="col-h col-date" data-sort="date">Modified</span>
+          </div>
+        </div>
+        <div class="pane-status"></div>
+      </div>`;
+  }
+
+  // Dividers
+  grid.innerHTML += `
+    <div class="divider-v" id="divV" style="grid-row:1/4;grid-column:2"></div>
+    <div class="divider-h" id="divH" style="grid-row:2;grid-column:1/4"></div>`;
+
+  // Wire panes: click to focus
+  for (let i = 0; i < 4; i++) {
+    const pane = document.getElementById('pane'+i);
+    pane.addEventListener('click', (e) => {
+      if (e.target === pane || e.target.classList.contains('file-area')) {
+        setActive(i);
+      }
+    });
+    // Nav buttons
+    pane.querySelectorAll('.nav-btn[data-nav]').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        setActive(i);
+        const nav = btn.dataset.nav;
+        if (nav === 'back') navBack(i);
+        if (nav === 'fwd') navForward(i);
+        if (nav === 'up') navUp(i);
+        if (nav === 'into') navInto(i);
+      };
+    });
+    // Create buttons
+    pane.querySelectorAll('.nav-btn[data-create]').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        setActive(i);
+        startCreate(i, btn.dataset.create);
+      };
+    });
+  }
+
+  // Divider dragging
+  setupDivider();
+}
+
+function setupDivider() {
+  let dragEl = null, startX, startY, grid;
+  document.addEventListener('mousedown', (e) => {
+    if (e.target.id === 'divV' || e.target.id === 'divH') {
+      dragEl = e.target;
+      grid = document.getElementById('grid');
+      startX = e.clientX; startY = e.clientY;
+      dragEl.style.background = 'var(--accent)';
+      e.preventDefault();
+    }
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragEl) return;
+    const rect = grid.getBoundingClientRect();
+    if (dragEl.id === 'divV') {
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      grid.style.gridTemplateColumns = `${Math.max(15,Math.min(85,pct))}% 1px ${100-Math.max(15,Math.min(85,pct))}%`;
+    } else {
+      const pct = ((e.clientY - rect.top) / rect.height) * 100;
+      grid.style.gridTemplateRows = `${Math.max(15,Math.min(85,pct))}% 1px ${100-Math.max(15,Math.min(85,pct))}%`;
+    }
+  });
+  document.addEventListener('mouseup', () => {
+    if (dragEl) { dragEl.style.background = ''; dragEl = null; }
+  });
+}
+
+// ── Keyboard ──
+document.addEventListener('keydown', (e) => {
+  if (e.metaKey && ['1','2','3','4'].includes(e.key)) {
+    e.preventDefault();
+    setActive(parseInt(e.key)-1);
+  }
+  if (e.key === 'Escape') hideCtx();
+  if (e.key === 'Backspace' && !e.target.closest('input')) {
+    e.preventDefault();
+    deleteSelected(activePane);
+  }
+});
+
+// ── Init ──
+buildGrid();
+(async () => {
+  for (let i = 0; i < 4; i++) {
+    await loadDir(i, '~');
+  }
+  setActive(0);
+  document.getElementById('buildBadge').textContent = isTauri ? 'tauri ✓' : 'mock ✓';
+})();
+</script>
+</body>
+</html>

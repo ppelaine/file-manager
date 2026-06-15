@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Diag</title>
+<style>body{background:#1a1b1e;color:#d4d4d4;font-family:system-ui;padding:2rem;font-size:14px}
+.ok{color:#6a9955}.err{color:#f44747}.info{color:#4a9eff}</style></head>
+<body>
+<h2>File Manager — Diagnostic</h2>
+<div id="out"></div>
+<script>
+(async function() {
+const out = document.getElementById('out');
+function log(msg, cls) {
+  out.innerHTML += `<div class="${cls||''}">${msg}</div>`;
+}
+try {
+  log('1. Checking window.__TAURI__...', 'info');
+  const t = window.__TAURI__;
+  log(t ? '   Present: ' + JSON.stringify(Object.keys(t)) : '   NOT FOUND', t ? 'ok' : 'err');
+
+  if (t) {
+    log('2. Checking t.core...', 'info');
+    log(t.core ? '   Present, keys: ' + JSON.stringify(Object.keys(t.core)) : '   NOT FOUND', t.core ? 'ok' : 'err');
+    log('3. Checking t.core.invoke...', 'info');
+    log(typeof t.core?.invoke === 'function' ? '   FUNCTION ✓' : '   NOT a function: ' + typeof t.core?.invoke, typeof t.core?.invoke === 'function' ? 'ok' : 'err');
+
+    log('4. Trying invoke("list_dir", {path:"~",sortBy:"name",ascending:true})...', 'info');
+    try {
+      const result = await t.core.invoke('list_dir', {path:'~',sortBy:'name',ascending:true});
+      log('   SUCCESS! ' + result.length + ' entries', 'ok');
+      result.slice(0,5).forEach(e => log('   - ' + e.name + (e.is_dir?'/':'') + ' [' + (e.size||0) + 'B]'));
+    } catch(e) {
+      log('   ERROR: ' + e, 'err');
+    }
+  } else {
+    log('Tauri bridge not found. Window in Tauri webview?', 'err');
+    log('User agent: ' + navigator.userAgent, 'info');
+  }
+} catch(e) {
+  log('FATAL: ' + e + ' at ' + e.stack, 'err');
+}
+})();
+</script></body></html>

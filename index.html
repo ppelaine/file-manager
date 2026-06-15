@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>File Manager</title>
+<style>
+:root {
+  --bg: #1a1b1e; --surface: #212327; --border: #2d2f33;
+  --accent: #4a9eff; --text: #d4d4d4; --dim: #8a887e;
+  --folder: #dcb67a; --danger: #f44747;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font: 12px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }
+body * { pointer-events: auto; }
+.app { display: flex; flex-direction: column; height: 100%; }
+.toolbar { display: flex; align-items: center; height: 32px; padding: 0 12px; background: var(--surface); border-bottom: 1px solid var(--border); gap: 10px; flex-shrink: 0; }
+.toolbar .title { font-weight: 600; font-size: 12px; color: var(--dim); }
+.grid { flex: 1; display: grid; grid-template-columns: 1fr 1px 1fr; grid-template-rows: 1fr 1px 1fr; }
+.pane { background: var(--bg); border: 2px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+.pane.active { border-color: var(--accent); }
+.pane-header { display: flex; align-items: center; height: 28px; padding: 0 8px; background: var(--surface); border-bottom: 1px solid var(--border); gap: 4px; flex-shrink: 0; }
+.pane-header .idx { font: 10px monospace; color: var(--accent); background: rgba(74,158,255,0.1); padding: 1px 6px; border-radius: 3px; }
+.breadcrumb { display: flex; align-items: center; gap: 2px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+.breadcrumb::-webkit-scrollbar { display: none; }
+.breadcrumb span { font-size: 11px; cursor: pointer; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+.breadcrumb .seg { color: var(--dim); } .breadcrumb .seg:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.breadcrumb .root { color: var(--folder); font-weight: 600; }
+.breadcrumb .sep { color: #555; font-size: 10px; cursor: default; }
+.pane-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.pane-actions button { width: 22px; height: 22px; background: none; border: none; color: var(--dim); cursor: pointer; border-radius: 3px; font-size: 12px; }
+.pane-actions button:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.file-list { flex: 1; overflow-y: auto; overflow-x: hidden; }
+.file-row { display: flex; align-items: center; height: 24px; padding: 0 8px; cursor: pointer; gap: 6px; }
+.file-row:hover { background: rgba(255,255,255,0.04); }
+.file-row.sel { background: rgba(74,158,255,0.12); }
+.file-row .icon { width: 18px; text-align: center; flex-shrink: 0; font-size: 15px; }
+.file-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-row .meta { font: 10px monospace; color: #555; flex-shrink: 0; width: 70px; text-align: right; }
+.file-row .date { font: 10px monospace; color: #555; flex-shrink: 0; width: 110px; }
+.status { display: flex; align-items: center; height: 20px; padding: 0 10px; font-size: 10px; color: var(--dim); background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; }
+.status .err { color: var(--danger); }
+.empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #444; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="toolbar">
+    <span class="title">File Manager</span>
+    <span style="font:10px monospace;color:#555">⌘1-4 focus panes</span>
+  </div>
+  <div class="grid" id="grid">
+    <div class="pane active" id="pane0" style="grid-row:1;grid-column:1" onclick="activatePane(0)">
+      <div class="pane-header">
+        <span class="idx">⌘1</span>
+        <div class="breadcrumb" id="bc0"></div>
+        <div class="pane-actions">
+          <button title="New File" onclick="event.stopPropagation();startCreate(0,'file')">📄</button>
+          <button title="New Folder" onclick="event.stopPropagation();startCreate(0,'dir')">📁</button>
+        </div>
+      </div>
+      <div class="file-list" id="list0"></div>
+      <div class="status" id="st0"></div>
+    </div>
+    <div class="divider-v" style="grid-row:1/4;grid-column:2;background:var(--border);cursor:col-resize"></div>
+    <div class="pane" id="pane1" style="grid-row:1;grid-column:3" onclick="activatePane(1)">
+      <div class="pane-header">
+        <span class="idx">⌘2</span>
+        <div class="breadcrumb" id="bc1"></div>
+        <div class="pane-actions">
+          <button title="New File" onclick="event.stopPropagation();startCreate(1,'file')">📄</button>
+          <button title="New Folder" onclick="event.stopPropagation();startCreate(1,'dir')">📁</button>
+        </div>
+      </div>
+      <div class="file-list" id="list1"></div>
+      <div class="status" id="st1"></div>
+    </div>
+    <div class="divider-h" style="grid-row:2;grid-column:1/4;background:var(--border);cursor:row-resize"></div>
+    <div class="pane" id="pane2" style="grid-row:3;grid-column:1" onclick="activatePane(2)">
+      <div class="pane-header">
+        <span class="idx">⌘3</span>
+        <div class="breadcrumb" id="bc2"></div>
+        <div class="pane-actions">
+          <button title="New File" onclick="event.stopPropagation();startCreate(2,'file')">📄</button>
+          <button title="New Folder" onclick="event.stopPropagation();startCreate(2,'dir')">📁</button>
+        </div>
+      </div>
+      <div class="file-list" id="list2"></div>
+      <div class="status" id="st2"></div>
+    </div>
+    <div class="pane" id="pane3" style="grid-row:3;grid-column:3" onclick="activatePane(3)">
+      <div class="pane-header">
+        <span class="idx">⌘4</span>
+        <div class="breadcrumb" id="bc3"></div>
+        <div class="pane-actions">
+          <button title="New File" onclick="event.stopPropagation();startCreate(3,'file')">📄</button>
+          <button title="New Folder" onclick="event.stopPropagation();startCreate(3,'dir')">📁</button>
+        </div>
+      </div>
+      <div class="file-list" id="list3"></div>
+      <div class="status" id="st3"></div>
+    </div>
+  </div>
+  <div id="debug" style="display:none;height:80px;overflow-y:auto;background:#0a0a0a;color:#6a9955;font:10px monospace;padding:4px 8px;flex-shrink:0;border-top:1px solid #2d2f33"></div>
+</div>
+
+<script>
+// ── State ──
+var lastClick = {}; // pane -> { path -> timestamp } for double-click detection
+var panes = [
+  { path: '~', entries: [], sel: null, loading: true },
+  { path: '~', entries: [], sel: null, loading: true },
+  { path: '~', entries: [], sel: null, loading: true },
+  { path: '~', entries: [], sel: null, loading: true },
+];
+var active = 0;
+
+// ── Tauri invoke (with browser mock fallback) ──
+function api(cmd, args) {
+  var t = window.__TAURI__;
+  if (t && t.core && t.core.invoke) return t.core.invoke(cmd, args);
+  if (t && t.invoke) return t.invoke(cmd, args);
+  var internals = window.__TAURI_INTERNALS__;
+  if (internals && internals.invoke) return internals.invoke.call(internals, cmd, args);
+  // Browser fallback: mock data for testing
+  console.warn('Using mock backend for:', cmd, args);
+  return mockApi(cmd, args);
+}
+
+var mockDirs = {
+  '~': ['Desktop','Documents','Downloads','Movies','Music','Pictures','Public','Applications','Library'],
+  '~/Desktop': ['screenshot.png','notes.txt','presentation.pdf'],
+  '~/Documents': ['Work','Personal','Resume-2026.pdf'],
+  '~/Downloads': ['Discord.dmg','photo.jpg','archive'],
+  '~/Documents/Work': ['Q4-Report.pdf','Budget-2026.xlsx'],
+  '~/Documents/Personal': ['Travel-Plans.md','Reading-List.txt'],
+};
+function mockApi(cmd, args) {
+  if (cmd === 'list_dir') {
+    var p = args.path;
+    var names = mockDirs[p] || [];
+    var base = p === '~' ? '~/' : (p.endsWith('/') ? p : p + '/');
+    if (p === '~') base = '~/';
+    var entries = names.map(function(n) {
+      var isDir = !n.includes('.');
+      return {
+        name: n, path: base + n,
+        is_dir: isDir, size: isDir ? 0 : Math.floor(Math.random() * 1000000),
+        modified: '2026-06-14 12:00', kind: isDir ? null : 'generic'
+      };
+    });
+    return Promise.resolve({ path: p, entries: entries });
+  }
+  return Promise.resolve();
+}
+
+// ── Helpers ──
+function $(id) { return document.getElementById(id); }
+function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; }
+
+function fileIconHTML(name, isDir) {
+  if (isDir) return '<span style="color:#e8ba5a;font-size:16px">📁</span>';
+  var ext = (name.split('.').pop() || '').toLowerCase();
+  var code = 'ts tsx js jsx json css html rs py rb go java c h cpp swift kt yaml yml toml sh bash zsh sql vue svelte astro mdx xml'.split(' ');
+  if (code.indexOf(ext) >= 0) return '<span style="color:#7ec868;font-size:14px">&lt;/&gt;</span>';
+  var img = 'png jpg jpeg gif svg webp ico bmp tiff avif heic'.split(' ');
+  if (img.indexOf(ext) >= 0) return '<span style="color:#d88cd8;font-size:14px">🖼</span>';
+  var doc = 'pdf doc docx xls xlsx ppt pptx md txt rtf csv pages numbers key'.split(' ');
+  if (doc.indexOf(ext) >= 0) return '<span style="color:#6cb6f0;font-size:14px">📋</span>';
+  var arc = 'zip tar gz rar 7z dmg pkg iso'.split(' ');
+  if (arc.indexOf(ext) >= 0) return '<span style="color:#ce9178;font-size:14px">📦</span>';
+  return '<span style="color:#999;font-size:14px">📄</span>';
+}
+
+function fmtSize(n) {
+  if (!n || n === 0) return '';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+  return (n / 1073741824).toFixed(1) + ' GB';
+}
+
+// ── Breadcrumb ──
+function renderBreadcrumb(pi) {
+  var path = panes[pi].path;
+  var parts, paths;
+  if (path === '~') { parts = ['~']; paths = ['~']; }
+  else if (path === '/') { parts = ['/']; paths = ['/']; }
+  else if (path.startsWith('~/')) {
+    parts = ['~']; var rest = path.slice(2).split('/');
+    for (var i = 0; i < rest.length; i++) { parts.push(rest[i]); }
+    paths = ['~'];
+    for (var i = 1; i < parts.length; i++) { paths.push('~/' + rest.slice(0, i).join('/')); }
+  } else if (path.startsWith('/')) {
+    parts = ['/']; var rest = path.slice(1).split('/');
+    for (var i = 0; i < rest.length; i++) { parts.push(rest[i]); }
+    paths = ['/'];
+    for (var i = 1; i < parts.length; i++) { paths.push('/' + rest.slice(0, i).join('/')); }
+  } else {
+    parts = path.split('/'); paths = [parts[0]];
+    for (var i = 1; i < parts.length; i++) { paths.push(parts.slice(0, i + 1).join('/')); }
+  }
+  var html = '';
+  for (var i = 0; i < parts.length; i++) {
+    if (i > 0) html += '<span class="sep">›</span>';
+    var cls = i === 0 ? 'root' : 'seg';
+    html += '<span class="' + cls + '" data-path="' + paths[i] + '">' + parts[i] + '</span>';
+  }
+  $('bc' + pi).innerHTML = html;
+  // Click handlers
+  $('bc' + pi).querySelectorAll('.seg,.root').forEach(function(s) {
+    s.onclick = function(e) { e.stopPropagation(); navigate(pi, this.dataset.path); };
+  });
+}
+
+// ── Render pane ──
+function renderPane(pi) {
+  var p = panes[pi];
+  renderBreadcrumb(pi);
+  var list = $('list' + pi);
+  if (p.loading) {
+    list.innerHTML = '<div class="empty">Loading…</div>';
+    $('st' + pi).innerHTML = '';
+    return;
+  }
+  if (p.entries.length === 0) {
+    list.innerHTML = '<div class="empty">Empty folder</div>';
+  } else {
+    var html = '';
+    for (var i = 0; i < p.entries.length; i++) {
+      var e = p.entries[i];
+      var sel = p.sel === e.path ? ' sel' : '';
+      html += '<div class="file-row' + sel + '" data-path="' + e.path + '" data-is-dir="' + e.is_dir + '">' +
+        '<span class="icon">' + fileIconHTML(e.name, e.is_dir) + '</span>' +
+        '<span class="name">' + e.name + '</span>' +
+        '<span class="meta">' + (e.is_dir ? '' : fmtSize(e.size)) + '</span>' +
+        '<span class="date">' + (e.modified || '') + '</span>' +
+        '</div>';
+    }
+    list.innerHTML = html;
+    // Event delegation on list container (more reliable cross-browser)
+    list.onmousedown = function(e) {
+      var row = e.target.closest('.file-row');
+      if (!row) return;
+      e.stopPropagation();
+      var path = row.dataset.path;
+      var isDir = row.dataset.isDir === 'true';
+      debug('Click: ' + path + ' (dir=' + isDir + ')');
+      if (isDir) {
+        debug('Navigate: ' + path);
+        navigate(pi, path);
+      } else {
+        panes[pi].sel = path;
+        renderPane(pi);
+      }
+    };
+    list.oncontextmenu = function(e) {
+      e.preventDefault();
+      var row = e.target.closest('.file-row');
+      if (!row) return;
+      e.preventDefault(); e.stopPropagation();
+      panes[pi].sel = row.dataset.path;
+      renderPane(pi);
+      showMenu(pi, e.clientX, e.clientY);
+    };
+  }
+  var count = p.entries.length;
+  $('st' + pi).innerHTML = count + ' item' + (count !== 1 ? 's' : '') + ' · ' + p.path;
+}
+
+// ── Load directory ──
+async function loadDir(pi, path) {
+  panes[pi].loading = true;
+  panes[pi].path = path;
+  renderPane(pi);
+  try {
+    var result = await api('list_dir', { path: path, sortBy: 'name', ascending: true });
+    panes[pi].entries = result.entries || [];
+    panes[pi].path = result.path || path;
+    panes[pi].sel = null;
+    panes[pi].loading = false;
+    renderPane(pi);
+  } catch(err) {
+    panes[pi].loading = false;
+    $('st' + pi).innerHTML = '<span class="err">Error: ' + err + '</span>';
+    $('list' + pi).innerHTML = '<div class="empty">Failed to load</div>';
+  }
+}
+
+// ── Navigate ──
+async function navigate(pi, path) {
+  activatePane(pi);
+  await loadDir(pi, path);
+}
+
+// ── Active pane ──
+function activatePane(pi) {
+  active = pi;
+  ['pane0','pane1','pane2','pane3'].forEach(function(id, i) {
+    $(id).classList.toggle('active', i === pi);
+  });
+}
+
+// ── Create item ──
+function startCreate(pi, type) {
+  activatePane(pi);
+  var name = prompt(type === 'file' ? 'New file name:' : 'New folder name:');
+  if (!name || !name.trim()) return;
+  var dirPath = panes[pi].path;
+  var fullPath = dirPath === '~' ? name : (dirPath + '/' + name.trim());
+  api(type === 'file' ? 'create_file' : 'create_dir', { path: fullPath })
+    .then(function() { loadDir(pi, dirPath); })
+    .catch(function(err) { alert('Failed: ' + err); });
+}
+
+// ── Context menu ──
+var menuEl = null;
+function showMenu(pi, x, y) {
+  hideMenu();
+  menuEl = document.createElement('div');
+  menuEl.style.cssText = 'position:fixed;background:#212327;border:1px solid #2d2f33;border-radius:8px;padding:4px;min-width:160px;z-index:1000;box-shadow:0 8px 32px rgba(0,0,0,0.5);';
+  menuEl.style.left = Math.min(x, window.innerWidth - 170) + 'px';
+  menuEl.style.top = Math.min(y, window.innerHeight - 200) + 'px';
+  var items = [
+    { label: 'Open', action: 'open' },
+    { label: 'Delete', action: 'delete', danger: true },
+  ];
+  items.forEach(function(item) {
+    var row = document.createElement('div');
+    row.textContent = item.label;
+    row.style.cssText = 'padding:6px 12px;cursor:pointer;border-radius:4px;font-size:12px;' + (item.danger ? 'color:#f44747;' : '');
+    row.onmouseenter = function() { this.style.background = 'rgba(74,158,255,0.12)'; };
+    row.onmouseleave = function() { this.style.background = ''; };
+    row.onclick = function() {
+      hideMenu();
+      var sel = panes[pi].sel;
+      if (!sel) return;
+      if (item.action === 'open') {
+        api('open_file', { path: sel }).catch(function(){});
+      } else if (item.action === 'delete') {
+        if (confirm('Delete "' + sel.split('/').pop() + '"?')) {
+          api('delete_item', { path: sel }).then(function() { loadDir(pi, panes[pi].path); }).catch(function(err) { alert('Failed: ' + err); });
+        }
+      }
+    };
+    menuEl.appendChild(row);
+  });
+  document.body.appendChild(menuEl);
+  setTimeout(function() { document.addEventListener('click', hideMenu, { once: true }); }, 0);
+}
+function hideMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
+
+// ── Keyboard ──
+document.addEventListener('keydown', function(e) {
+  if (e.metaKey || e.ctrlKey) {
+    var n = parseInt(e.key);
+    if (n >= 1 && n <= 4) { e.preventDefault(); activatePane(n - 1); }
+    if (e.key === 'd' || e.key === 'D') { e.preventDefault(); var d = document.getElementById('debug'); d.style.display = d.style.display === 'none' ? 'block' : 'none'; }
+  }
+  if (e.key === 'Escape') hideMenu();
+  if (e.key === 'Backspace' && !e.target.closest('input')) {
+    var p = panes[active];
+    if (p.sel) {
+      var name = p.sel.split('/').pop();
+      if (confirm('Delete "' + name + '"?')) {
+        api('delete_item', { path: p.sel }).then(function() { loadDir(active, p.path); }).catch(function(){});
+      }
+    }
+  }
+});
+
+// ── Debug overlay ──
+var debugLines = [];
+function debug(msg) {
+  debugLines.push(new Date().toLocaleTimeString() + ' ' + msg);
+  if (debugLines.length > 20) debugLines.shift();
+  var el = document.getElementById('debug');
+  if (el) el.textContent = debugLines.join('\n');
+}
+
+// Hook console
+var origLog = console.log, origErr = console.error, origWarn = console.warn;
+console.log = function() { origLog.apply(console, arguments); debug('[log] ' + Array.prototype.join.call(arguments, ' ')); };
+console.error = function() { origErr.apply(console, arguments); debug('[ERR] ' + Array.prototype.join.call(arguments, ' ')); };
+console.warn = function() { origWarn.apply(console, arguments); debug('[warn] ' + Array.prototype.join.call(arguments, ' ')); };
+
+// ── Global click diagnostic ──
+document.addEventListener('click', function(e) {
+  debug('DOCUMENT CLICK: tag=' + e.target.tagName + ' class=' + (e.target.className || '(none)') + ' id=' + (e.target.id || '(none)'));
+}, true); // capture phase
+document.addEventListener('mousedown', function(e) {
+  debug('MOUSEDOWN: tag=' + e.target.tagName);
+}, true);
+
+// ── Init ──
+debug('Init start');
+debug('Tauri check: __TAURI__=' + !!window.__TAURI__ + ' __TAURI_INTERNALS__=' + !!window.__TAURI_INTERNALS__);
+(async function() {
+  for (var i = 0; i < 4; i++) {
+    debug('Loading pane ' + i + '...');
+    await loadDir(i, '~');
+    debug('Pane ' + i + ': ' + panes[i].entries.length + ' entries, path=' + panes[i].path);
+  }
+  debug('Init complete');
+})();
+</script>
+</body>
+</html>

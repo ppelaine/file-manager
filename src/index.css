@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+:root {
+  --bg-root: #1a1b1e;
+  --bg-surface: #212327;
+  --bg-input: #282a2e;
+  --border: #2d2f33;
+  --border-active: #4a9eff;
+  --border-focus-ring: rgba(74, 158, 255, 0.25);
+  --text-primary: #d4d4d4;
+  --text-secondary: #8a8a8a;
+  --text-tertiary: #5c5d61;
+  --text-dim: #8a887e;
+  --accent: #4a9eff;
+  --accent-dim: #2a5f9f;
+  --folder: #dcb67a;
+  --folder-open: #e5c68a;
+  --file-code: #6a9955;
+  --file-image: #c586c0;
+  --file-doc: #569cd6;
+  --file-generic: #8a8a8a;
+  --hover: rgba(255, 255, 255, 0.04);
+  --selected: rgba(74, 158, 255, 0.12);
+  --danger: #f44747;
+  --warning: #cca700;
+  --success: #6a9955;
+  --radius: 5px;
+  --radius-sm: 3px;
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui,
+    sans-serif;
+  --font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+  --transition: 120ms ease;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg-root);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.nav-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+.nav-btn:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+.nav-btn:active {
+  background: var(--selected);
+}
