@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { PaneState, ContextMenuTarget } from "./types";
+import type { PaneState, ContextMenuTarget, FileClipboard, PaneHandle } from "./types";
 import { Pane } from "./components/Pane";
 import { ContextMenu } from "./components/ContextMenu";
 
@@ -61,6 +61,10 @@ function App() {
   const [gridCols, setGridCols] = useState("50% 1px 50%");
   const [gridRows, setGridRows] = useState("50% 1px 50%");
   const [ctxMenu, setCtxMenu] = useState<ContextMenuTarget | null>(null);
+  const [fileClipboard, setFileClipboard] = useState<FileClipboard | null>(null);
+
+  // Refs for imperative Pane control (context menu actions)
+  const paneRefs = useRef<(PaneHandle | null)[]>([null, null, null, null]);
 
   // Navigation history per pane
   const backStack = useRef<string[][]>([[], [], [], []]);
@@ -205,29 +209,93 @@ function App() {
 
   const handleContextAction = useCallback(
     async (action: string, pane: number, entryPath: string | null) => {
-      if (!entryPath) return;
+      const paneRef = paneRefs.current[pane];
+      const statusFn = (msg: string, isErr?: boolean) => paneRef?.showStatus(msg, isErr);
+
       try {
         switch (action) {
-          case "open":
+          case "open": {
+            if (!entryPath) return;
             await tauriInvoke("open_file", { path: entryPath });
+            statusFn(`Opened "${entryPath.split("/").pop()}"`);
             break;
-          case "delete":
+          }
+          case "delete": {
+            if (!entryPath) return;
+            const name = entryPath.split("/").pop();
             await tauriInvoke("delete_item", { path: entryPath });
             loadDir(pane, panes[pane].path);
+            statusFn(`Deleted "${name}"`);
             break;
-          case "rename":
-            // Handled inline in the FileRow component
+          }
+          case "rename": {
+            if (!entryPath) return;
+            paneRef?.startRename(entryPath);
             break;
-          case "copy-path":
+          }
+          case "copy-path": {
+            if (!entryPath) return;
             await navigator.clipboard.writeText(entryPath);
+            statusFn("Path copied to clipboard");
             break;
+          }
+          case "copy": {
+            if (!entryPath) return;
+            setFileClipboard({ paths: [entryPath], operation: "copy" });
+            statusFn(`Copied "${entryPath.split("/").pop()}"`);
+            break;
+          }
+          case "cut": {
+            if (!entryPath) return;
+            setFileClipboard({ paths: [entryPath], operation: "cut" });
+            statusFn(`Cut "${entryPath.split("/").pop()}" — paste elsewhere`);
+            break;
+          }
+          case "paste": {
+            if (!fileClipboard) return;
+            const destDir = panes[pane].path;
+            let successCount = 0;
+            for (const srcPath of fileClipboard.paths) {
+              const srcName = srcPath.split("/").pop() || "unnamed";
+              const destPath = destDir === HOME ? srcName : `${destDir}/${srcName}`;
+              try {
+                await tauriInvoke("copy_file", { src: srcPath, dest: destPath });
+                successCount++;
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                statusFn(`Failed to paste "${srcName}": ${msg}`, true);
+              }
+            }
+            // If cut, delete originals after successful copy
+            if (fileClipboard.operation === "cut" && successCount > 0) {
+              for (const srcPath of fileClipboard.paths) {
+                try {
+                  await tauriInvoke("delete_item", { path: srcPath });
+                } catch { /* best effort */ }
+              }
+            }
+            setFileClipboard(null);
+            loadDir(pane, destDir);
+            statusFn(`Pasted ${successCount} item${successCount !== 1 ? "s" : ""}`);
+            break;
+          }
+          case "new-file": {
+            paneRef?.startInlineCreate("file");
+            break;
+          }
+          case "new-folder": {
+            paneRef?.startInlineCreate("folder");
+            break;
+          }
         }
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        statusFn(`${action} failed: ${msg}`, true);
         console.error(`Action ${action} failed:`, err);
       }
       setCtxMenu(null);
     },
-    [loadDir, panes]
+    [loadDir, panes, fileClipboard]
   );
 
   const handleCreateItem = useCallback(
@@ -244,6 +312,8 @@ function App() {
         }
         loadDir(paneIdx, dirPath);
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        paneRefs.current[paneIdx]?.showStatus(`Create failed: ${msg}`, true);
         console.error("Failed to create item:", err);
       }
     },
@@ -256,6 +326,8 @@ function App() {
         await tauriInvoke("rename_item", { oldPath, newName });
         loadDir(paneIdx, panes[paneIdx].path);
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        paneRefs.current[paneIdx]?.showStatus(`Rename failed: ${msg}`, true);
         console.error("Failed to rename:", err);
       }
     },
@@ -304,7 +376,7 @@ function App() {
 
       {/* Grid */}
       <div
-        className="flex-1 grid relative"
+        className="flex-1 grid relative min-h-0"
         style={{
           gridTemplateColumns: gridCols,
           gridTemplateRows: gridRows,
@@ -312,6 +384,7 @@ function App() {
       >
         {/* Pane 0: Top-Left */}
         <Pane
+          ref={(el) => { paneRefs.current[0] = el; }}
           paneIdx={0}
           state={panes[0]}
           isActive={activePane === 0}
@@ -337,6 +410,7 @@ function App() {
         {/* Pane 1: Top-Right */}
         <div style={{ gridRow: 1, gridColumn: 3 }}>
           <Pane
+            ref={(el) => { paneRefs.current[1] = el; }}
             paneIdx={1}
             state={panes[1]}
             isActive={activePane === 1}
@@ -371,6 +445,7 @@ function App() {
         {/* Pane 2: Bottom-Left */}
         <div style={{ gridRow: 3, gridColumn: 1 }}>
           <Pane
+            ref={(el) => { paneRefs.current[2] = el; }}
             paneIdx={2}
             state={panes[2]}
             isActive={activePane === 2}
@@ -391,6 +466,7 @@ function App() {
         {/* Pane 3: Bottom-Right */}
         <div style={{ gridRow: 3, gridColumn: 3 }}>
           <Pane
+            ref={(el) => { paneRefs.current[3] = el; }}
             paneIdx={3}
             state={panes[3]}
             isActive={activePane === 3}
@@ -417,6 +493,7 @@ function App() {
             handleContextAction(action, pane, entryPath)
           }
           onClose={() => setCtxMenu(null)}
+          hasClipboard={fileClipboard !== null}
         />
       )}
     </div>

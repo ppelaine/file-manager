@@ -35,3 +35,14 @@ export interface ContextMenuTarget {
   x: number;
   y: number;
 }
+
+export interface PaneHandle {
+  startInlineCreate: (type: "file" | "folder") => void;
+  startRename: (entryPath: string) => void;
+  showStatus: (msg: string, isError?: boolean) => void;
+}
+
+export interface FileClipboard {
+  paths: string[];
+  operation: "copy" | "cut";
+}

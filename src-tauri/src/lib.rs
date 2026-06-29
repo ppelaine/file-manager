@@ -179,6 +179,26 @@ fn rename_item(old_path: &str, new_name: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn copy_file(src: &str, dest: &str) -> Result<(), String> {
+    let resolved_src = resolve_path(src);
+    let resolved_dest = resolve_path(dest);
+    if (!resolved_src.exists()) {
+        return Err(format!("Source does not exist: {}", resolved_src.display()));
+    }
+    if resolved_src.is_dir() {
+        // Recursively copy directory
+        fs_extra::dir::copy(&resolved_src, &resolved_dest, &fs_extra::dir::CopyOptions::new())
+            .map_err(|e| format!("Failed to copy directory: {}", e))?;
+    } else {
+        if let Some(parent) = resolved_dest.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create parent: {}", e))?;
+        }
+        fs::copy(&resolved_src, &resolved_dest).map_err(|e| format!("Failed to copy file: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn open_file(path: &str) -> Result<(), String> {
     let resolved = resolve_path(path);
     if !resolved.exists() {
@@ -236,6 +256,7 @@ pub fn run() {
             delete_item,
             rename_item,
             open_file,
+            copy_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

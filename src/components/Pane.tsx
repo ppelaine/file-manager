@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef } from "react";
-import type { PaneState, FileEntry, ContextMenuTarget } from "../types";
+import { useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
+import type { PaneState, FileEntry, ContextMenuTarget, PaneHandle } from "../types";
 import { Breadcrumb } from "./Breadcrumb";
 import { FileList } from "./FileList";
 
@@ -20,7 +20,7 @@ interface PaneProps {
   onSort: (sortBy: string) => void;
 }
 
-export function Pane({
+export const Pane = forwardRef<PaneHandle, PaneProps>(function Pane({
   paneIdx,
   state,
   isActive,
@@ -35,7 +35,7 @@ export function Pane({
   onNavBack,
   onNavForward,
   onSort,
-}: PaneProps) {
+}, ref) {
   const [inlineMode, setInlineMode] = useState<"file" | "folder" | null>(null);
   const [inlineName, setInlineName] = useState("");
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -45,11 +45,28 @@ export function Pane({
 
   const totalItems = countAll(state.entries);
 
-  const flashStatus = useCallback((msg: string) => {
-    setStatusMsg(msg);
+  const flashStatus = useCallback((msg: string, isError?: boolean) => {
+    setStatusMsg(isError ? `⚠ ${msg}` : msg);
     if (statusTimeout.current) clearTimeout(statusTimeout.current);
-    statusTimeout.current = setTimeout(() => setStatusMsg(""), 2500);
+    statusTimeout.current = setTimeout(() => setStatusMsg(""), 3000);
   }, []);
+
+  // Expose imperative methods to parent (for context menu actions)
+  useImperativeHandle(ref, () => ({
+    startInlineCreate(type: "file" | "folder") {
+      setInlineMode(type);
+      setInlineName("");
+    },
+    startRename(entryPath: string) {
+      setRenamingPath(entryPath);
+      // Find the entry name to pre-fill
+      const entry = state.entries.find((e) => e.path === entryPath);
+      setRenamingName(entry?.name || "");
+    },
+    showStatus(msg: string, isError?: boolean) {
+      flashStatus(msg, isError);
+    },
+  }), [flashStatus, state.entries]);
 
   const handleCreateSubmit = useCallback(() => {
     const name = inlineName.trim();
@@ -195,7 +212,7 @@ export function Pane({
       </div>
     </div>
   );
-}
+});
 
 function countAll(entries: FileEntry[]): number {
   let count = 0;

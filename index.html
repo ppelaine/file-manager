@@ -16,10 +16,10 @@ body * { pointer-events: auto; }
 .app { display: flex; flex-direction: column; height: 100%; }
 .toolbar { display: flex; align-items: center; height: 32px; padding: 0 12px; background: var(--surface); border-bottom: 1px solid var(--border); gap: 10px; flex-shrink: 0; }
 .toolbar .title { font-weight: 600; font-size: 12px; color: var(--dim); }
-.grid { flex: 1; display: grid; grid-template-columns: 1fr 1px 1fr; grid-template-rows: 1fr 1px 1fr; }
-.pane { background: var(--bg); border: 2px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+.grid { flex: 1; display: grid; grid-template-columns: 1fr 1px 1fr; grid-template-rows: 1fr 1px 1fr; min-height: 0; }
+.pane { background: var(--bg); border: 2px solid var(--border); position: relative; overflow: hidden; }
 .pane.active { border-color: var(--accent); }
-.pane-header { display: flex; align-items: center; height: 28px; padding: 0 8px; background: var(--surface); border-bottom: 1px solid var(--border); gap: 4px; flex-shrink: 0; }
+.pane-header { display: flex; align-items: center; height: 28px; padding: 0 8px; background: var(--surface); border-bottom: 1px solid var(--border); gap: 4px; position: absolute; top: 0; left: 0; right: 0; z-index: 2; }
 .pane-header .idx { font: 10px monospace; color: var(--accent); background: rgba(74,158,255,0.1); padding: 1px 6px; border-radius: 3px; }
 .breadcrumb { display: flex; align-items: center; gap: 2px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
 .breadcrumb::-webkit-scrollbar { display: none; }
@@ -30,7 +30,9 @@ body * { pointer-events: auto; }
 .pane-actions { display: flex; gap: 2px; flex-shrink: 0; }
 .pane-actions button { width: 22px; height: 22px; background: none; border: none; color: var(--dim); cursor: pointer; border-radius: 3px; font-size: 12px; }
 .pane-actions button:hover { background: rgba(255,255,255,0.06); color: var(--text); }
-.file-list { flex: 1; overflow-y: auto; overflow-x: hidden; }
+.nav-btn { width: 22px; height: 22px; background: none; border: none; color: var(--dim); cursor: pointer; border-radius: 3px; font-size: 12px; flex-shrink: 0; }
+.nav-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.file-list { position: absolute; top: 28px; bottom: 20px; left: 0; right: 0; overflow-y: auto; overflow-x: hidden; }
 .file-row { display: flex; align-items: center; height: 24px; padding: 0 8px; cursor: pointer; gap: 6px; }
 .file-row:hover { background: rgba(255,255,255,0.04); }
 .file-row.sel { background: rgba(74,158,255,0.12); }
@@ -38,7 +40,7 @@ body * { pointer-events: auto; }
 .file-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-row .meta { font: 10px monospace; color: #555; flex-shrink: 0; width: 70px; text-align: right; }
 .file-row .date { font: 10px monospace; color: #555; flex-shrink: 0; width: 110px; }
-.status { display: flex; align-items: center; height: 20px; padding: 0 10px; font-size: 10px; color: var(--dim); background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0; }
+.status { display: flex; align-items: center; height: 20px; padding: 0 10px; font-size: 10px; color: var(--dim); background: var(--surface); border-top: 1px solid var(--border); position: absolute; bottom: 0; left: 0; right: 0; z-index: 2; }
 .status .err { color: var(--danger); }
 .empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #444; font-size: 12px; }
 </style>
@@ -48,12 +50,16 @@ body * { pointer-events: auto; }
   <div class="toolbar">
     <span class="title">File Manager</span>
     <span style="font:10px monospace;color:#555">⌘1-4 focus panes</span>
+    <span id="clipBadge" style="display:none;font:10px monospace;color:var(--accent);margin-left:auto"></span>
   </div>
   <div class="grid" id="grid">
     <div class="pane active" id="pane0" style="grid-row:1;grid-column:1" onclick="activatePane(0)">
       <div class="pane-header">
         <span class="idx">⌘1</span>
         <div class="breadcrumb" id="bc0"></div>
+        <button class="nav-btn" title="Back" onclick="event.stopPropagation();navBack(0)">←</button>
+        <button class="nav-btn" title="Forward" onclick="event.stopPropagation();navForward(0)">→</button>
+        <button class="nav-btn" title="Up" onclick="event.stopPropagation();navUp(0)">↑</button>
         <div class="pane-actions">
           <button title="New File" onclick="event.stopPropagation();startCreate(0,'file')">📄</button>
           <button title="New Folder" onclick="event.stopPropagation();startCreate(0,'dir')">📁</button>
@@ -67,6 +73,9 @@ body * { pointer-events: auto; }
       <div class="pane-header">
         <span class="idx">⌘2</span>
         <div class="breadcrumb" id="bc1"></div>
+        <button class="nav-btn" title="Back" onclick="event.stopPropagation();navBack(1)">←</button>
+        <button class="nav-btn" title="Forward" onclick="event.stopPropagation();navForward(1)">→</button>
+        <button class="nav-btn" title="Up" onclick="event.stopPropagation();navUp(1)">↑</button>
         <div class="pane-actions">
           <button title="New File" onclick="event.stopPropagation();startCreate(1,'file')">📄</button>
           <button title="New Folder" onclick="event.stopPropagation();startCreate(1,'dir')">📁</button>
@@ -80,6 +89,9 @@ body * { pointer-events: auto; }
       <div class="pane-header">
         <span class="idx">⌘3</span>
         <div class="breadcrumb" id="bc2"></div>
+        <button class="nav-btn" title="Back" onclick="event.stopPropagation();navBack(2)">←</button>
+        <button class="nav-btn" title="Forward" onclick="event.stopPropagation();navForward(2)">→</button>
+        <button class="nav-btn" title="Up" onclick="event.stopPropagation();navUp(2)">↑</button>
         <div class="pane-actions">
           <button title="New File" onclick="event.stopPropagation();startCreate(2,'file')">📄</button>
           <button title="New Folder" onclick="event.stopPropagation();startCreate(2,'dir')">📁</button>
@@ -92,6 +104,9 @@ body * { pointer-events: auto; }
       <div class="pane-header">
         <span class="idx">⌘4</span>
         <div class="breadcrumb" id="bc3"></div>
+        <button class="nav-btn" title="Back" onclick="event.stopPropagation();navBack(3)">←</button>
+        <button class="nav-btn" title="Forward" onclick="event.stopPropagation();navForward(3)">→</button>
+        <button class="nav-btn" title="Up" onclick="event.stopPropagation();navUp(3)">↑</button>
         <div class="pane-actions">
           <button title="New File" onclick="event.stopPropagation();startCreate(3,'file')">📄</button>
           <button title="New Folder" onclick="event.stopPropagation();startCreate(3,'dir')">📁</button>
@@ -114,6 +129,8 @@ var panes = [
   { path: '~', entries: [], sel: null, loading: true },
 ];
 var active = 0;
+var navHistory = [[],[],[],[]];
+var navFwd = [[],[],[],[]];
 
 // ── Tauri invoke (with browser mock fallback) ──
 function api(cmd, args) {
@@ -128,13 +145,28 @@ function api(cmd, args) {
 }
 
 var mockDirs = {
-  '~': ['Desktop','Documents','Downloads','Movies','Music','Pictures','Public','Applications','Library'],
-  '~/Desktop': ['screenshot.png','notes.txt','presentation.pdf'],
-  '~/Documents': ['Work','Personal','Resume-2026.pdf'],
+  '~': ['Desktop','Documents','Downloads','Movies','Music','Pictures','Public','AI','projects','Applications','Library','.zshrc','.gitconfig'],
+  '~/Desktop': ['screenshot.png','notes.txt','presentation.pdf','todo.md'],
+  '~/Documents': ['Work','Personal','Resume-2026.pdf','notes.txt'],
   '~/Downloads': ['Discord.dmg','photo.jpg','archive'],
-  '~/Documents/Work': ['Q4-Report.pdf','Budget-2026.xlsx'],
-  '~/Documents/Personal': ['Travel-Plans.md','Reading-List.txt'],
+  '~/Documents/Work': ['Q4-Report.pdf','Budget-2026.xlsx','Meeting-Notes-2026-01.md','Meeting-Notes-2026-02.md','Meeting-Notes-2026-03.md','Meeting-Notes-2026-04.md','Meeting-Notes-2026-05.md','Meeting-Notes-2026-06.md','Meeting-Notes-2026-07.md','Meeting-Notes-2026-08.md','Meeting-Notes-2026-09.md','Meeting-Notes-2026-10.md','Meeting-Notes-2026-11.md','Meeting-Notes-2026-12.md','Project-Plan-Q1.md','Project-Plan-Q2.md','Project-Plan-Q3.md','Project-Plan-Q4.md','Review-2025.pdf','Review-2026-H1.pdf','Invoice-001.pdf','Invoice-002.pdf','Invoice-003.pdf','Invoice-004.pdf','Invoice-005.pdf','Invoice-006.pdf','Invoice-007.pdf','Invoice-008.pdf','Invoice-009.pdf','Invoice-010.pdf','Contract-Acme.pdf','Contract-Globex.pdf','Contract-Initech.pdf','Contract-Umbrella.pdf','Report-Annual-2024.pdf','Report-Annual-2025.pdf','Report-Q1-2026.pdf','Report-Q2-2026.pdf','Slides-AllHands-Jan.pptx','Slides-AllHands-Feb.pptx','Slides-AllHands-Mar.pptx','Slides-AllHands-Apr.pptx','Slides-AllHands-May.pptx','Slides-AllHands-Jun.pptx','Budget-2024.xlsx','Budget-2025.xlsx','Budget-2026.xlsx'],
+  '~/Documents/Personal': ['Travel-Plans.md','Reading-List.txt','passport-scan.pdf','insurance-2026.pdf','tax-2025.pdf','recipes.txt','gym-schedule.md','bookmarks-2026.html','journal-2026-01.md','journal-2026-02.md','journal-2026-03.md','journal-2026-04.md','journal-2026-05.md','journal-2026-06.md','photo-album-notes.txt','gift-ideas.md','home-inventory.csv','subscriptions.txt','wifi-passwords.txt','car-maintenance-log.csv'],
+  '~/AI': ['newsletter','analyses','AI','CLAUDE.md','file-manager-mockup.html','ref-file-manager.jpg'],
+  '~/AI/newsletter': ['README.md','issue-1.md','issue-2.md','issue-3.md','issue-4.md','issue-5.md'],
+  '~/AI/analyses': ['600519-analysis.md','000858-analysis.md','300750-analysis.md','002594-analysis.md','601318-analysis.md'],
+  '~/AI/AI': ['trades.json','watchlist.json'],
+  '~/projects': ['file-manager','quant-backtest','my-app','vocab-explainer','family-calendar'],
+  '~/projects/file-manager': ['src','src-tauri','package.json','index.html','vite.config.ts','tsconfig.json','CLAUDE.md','README.md'],
 };
+// Resolve a path like '~/foo/bar' to a mockDirs key like '~/foo'
+function mockDirKey(p) {
+  if (!p || p === '~' || p === '/') return p === '/' ? '/' : '~';
+  var parts = p.replace(/\/+$/, '').split('/');
+  parts.pop();
+  if (parts.length === 0) return p.startsWith('/') ? '/' : '~';
+  return parts.join('/') || (p.startsWith('/') ? '/' : '~');
+}
+
 function mockApi(cmd, args) {
   if (cmd === 'list_dir') {
     var p = args.path;
@@ -145,11 +177,56 @@ function mockApi(cmd, args) {
       var isDir = !n.includes('.');
       return {
         name: n, path: base + n,
-        is_dir: isDir, size: isDir ? 0 : Math.floor(Math.random() * 1000000),
-        modified: '2026-06-14 12:00', kind: isDir ? null : 'generic'
+        is_dir: isDir, size: isDir ? 0 : Math.floor(Math.random() * 100000 + 1000),
+        modified: '2026-06-' + (10 + Math.floor(Math.random() * 20)).toString().padStart(2,'0') + ' ' + (8 + Math.floor(Math.random() * 14)) + ':' + Math.floor(Math.random() * 60).toString().padStart(2,'0'),
+        kind: isDir ? null : 'generic'
       };
     });
     return Promise.resolve({ path: p, entries: entries });
+  }
+  if (cmd === 'copy_file') {
+    var src = args.src, dest = args.dest;
+    var name = src.split('/').pop();
+    var destKey = mockDirKey(dest);
+    if (!mockDirs[destKey]) mockDirs[destKey] = [];
+    if (mockDirs[destKey].indexOf(name) < 0) {
+      mockDirs[destKey].push(name);
+    }
+    console.log('Mock copy: ' + name + ' -> ' + destKey + ' (size=' + mockDirs[destKey].length + ')');
+    return Promise.resolve();
+  }
+  if (cmd === 'rename_item') {
+    var oldPath = args.oldPath, newName = args.newName;
+    var oldName = oldPath.split('/').pop();
+    var parentKey = mockDirKey(oldPath);
+    if (mockDirs[parentKey]) {
+      var idx = mockDirs[parentKey].indexOf(oldName);
+      if (idx >= 0) mockDirs[parentKey][idx] = newName;
+    }
+    console.log('Mock rename: ' + oldName + ' -> ' + newName);
+    return Promise.resolve();
+  }
+  if (cmd === 'delete_item') {
+    var path = args.path;
+    var name = path.split('/').pop();
+    var parentKey = mockDirKey(path);
+    if (mockDirs[parentKey]) {
+      var idx = mockDirs[parentKey].indexOf(name);
+      if (idx >= 0) mockDirs[parentKey].splice(idx, 1);
+    }
+    console.log('Mock delete: ' + name + ' from ' + parentKey);
+    return Promise.resolve();
+  }
+  if (cmd === 'create_file' || cmd === 'create_dir') {
+    var path = args.path;
+    var name = path.split('/').pop();
+    var parentKey = mockDirKey(path);
+    if (!mockDirs[parentKey]) mockDirs[parentKey] = [];
+    if (mockDirs[parentKey].indexOf(name) < 0) {
+      mockDirs[parentKey].push(name);
+    }
+    console.log('Mock create: ' + name + ' in ' + parentKey);
+    return Promise.resolve();
   }
   return Promise.resolve();
 }
@@ -178,6 +255,21 @@ function fmtSize(n) {
   if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
   if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
   return (n / 1073741824).toFixed(1) + ' GB';
+}
+
+function flashSt(pi, msg) {
+  var st = $('st' + pi);
+  st.innerHTML = '<span style="color:var(--accent)">' + msg + '</span>';
+  setTimeout(function() { renderPane(pi); }, 2500);
+}
+function updateClipBadge() {
+  var b = document.getElementById('clipBadge');
+  if (copyBuffer) {
+    b.style.display = '';
+    b.textContent = (copyBuffer.isCut ? '✂ ' : '📋 ') + copyBuffer.path.split('/').pop();
+  } else {
+    b.style.display = 'none';
+  }
 }
 
 // ── Breadcrumb ──
@@ -241,26 +333,57 @@ function renderPane(pi) {
     // Event delegation on list container (more reliable cross-browser)
     list.onmousedown = function(e) {
       var row = e.target.closest('.file-row');
-      if (!row) return;
+      // Right-click: always show context menu
+      if (e.button === 2) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (row) {
+          panes[pi].sel = row.dataset.path;
+        }
+        renderPane(pi);
+        showMenu(pi, e.clientX, e.clientY);
+        return;
+      }
+      // Left-click on empty space: deselect
+      if (!row) {
+        panes[pi].sel = null;
+        renderPane(pi);
+        return;
+      }
+      // Left-click: select only (double-click will navigate)
       e.stopPropagation();
       var path = row.dataset.path;
       var isDir = row.dataset.isDir === 'true';
-      debug('Click: ' + path + ' (dir=' + isDir + ')');
-      if (isDir) {
-        debug('Navigate: ' + path);
-        navigate(pi, path);
-      } else {
-        panes[pi].sel = path;
-        renderPane(pi);
+      panes[pi].sel = path;
+      renderPane(pi);
+      // Double-click detection (400ms window)
+      var now = Date.now();
+      var lp = lastClick[pi] || {};
+      if (lp.path === path && (now - lp.time) < 400) {
+        debug('Double-click: ' + path + ' (dir=' + isDir + ')');
+        lp.path = null;
+        if (isDir) {
+          navigate(pi, path);
+        } else {
+          api('open_file', { path: path }).catch(function(){});
+        }
+        return;
       }
+      lp.path = path;
+      lp.time = now;
+      lastClick[pi] = lp;
     };
     list.oncontextmenu = function(e) {
       e.preventDefault();
+      e.stopPropagation();
       var row = e.target.closest('.file-row');
-      if (!row) return;
-      e.preventDefault(); e.stopPropagation();
-      panes[pi].sel = row.dataset.path;
-      renderPane(pi);
+      if (row) {
+        panes[pi].sel = row.dataset.path;
+        renderPane(pi);
+      } else {
+        panes[pi].sel = null;
+        renderPane(pi);
+      }
       showMenu(pi, e.clientX, e.clientY);
     };
   }
@@ -289,8 +412,38 @@ async function loadDir(pi, path) {
 
 // ── Navigate ──
 async function navigate(pi, path) {
+  var prev = panes[pi].path;
+  if (prev && prev !== path) {
+    navHistory[pi].push(prev);
+    navFwd[pi] = [];
+  }
   activatePane(pi);
   await loadDir(pi, path);
+}
+
+function navUp(pi) {
+  var p = panes[pi].path;
+  if (p === '/' || p === '~') return;
+  var parts = p.replace(/\/+$/, '').split('/');
+  parts.pop();
+  var parent = parts.join('/') || (p.startsWith('/') ? '/' : '~');
+  navigate(pi, parent);
+}
+
+function navBack(pi) {
+  if (navHistory[pi].length === 0) return;
+  navFwd[pi].push(panes[pi].path);
+  var prev = navHistory[pi].pop();
+  panes[pi].path = prev;
+  loadDir(pi, prev);
+}
+
+function navForward(pi) {
+  if (navFwd[pi].length === 0) return;
+  navHistory[pi].push(panes[pi].path);
+  var next = navFwd[pi].pop();
+  panes[pi].path = next;
+  loadDir(pi, next);
 }
 
 // ── Active pane ──
@@ -313,19 +466,43 @@ function startCreate(pi, type) {
     .catch(function(err) { alert('Failed: ' + err); });
 }
 
+// ── Copy/Paste buffer ──
+var copyBuffer = null; // { path: string, isCut: boolean }
+
 // ── Context menu ──
 var menuEl = null;
 function showMenu(pi, x, y) {
   hideMenu();
+  var sel = panes[pi].sel;
   menuEl = document.createElement('div');
-  menuEl.style.cssText = 'position:fixed;background:#212327;border:1px solid #2d2f33;border-radius:8px;padding:4px;min-width:160px;z-index:1000;box-shadow:0 8px 32px rgba(0,0,0,0.5);';
-  menuEl.style.left = Math.min(x, window.innerWidth - 170) + 'px';
-  menuEl.style.top = Math.min(y, window.innerHeight - 200) + 'px';
-  var items = [
-    { label: 'Open', action: 'open' },
-    { label: 'Delete', action: 'delete', danger: true },
-  ];
+  menuEl.style.cssText = 'position:fixed;background:#212327;border:1px solid #2d2f33;border-radius:8px;padding:4px;min-width:170px;z-index:1000;box-shadow:0 8px 32px rgba(0,0,0,0.5);';
+  menuEl.style.left = Math.min(x, window.innerWidth - 180) + 'px';
+  menuEl.style.top = Math.min(y, window.innerHeight - 340) + 'px';
+  var items = [];
+  // Always-available actions
+  items.push({ label: 'New File', action: 'newfile' });
+  items.push({ label: 'New Folder', action: 'newfolder' });
+  if (sel) {
+    if (items.length > 0) items.push({ sep: true });
+    items.push({ label: 'Open', action: 'open' });
+    items.push({ label: 'Copy Path', action: 'copypath' });
+    items.push({ label: 'Copy', action: 'copy' });
+    items.push({ label: 'Cut', action: 'cut' });
+    items.push({ label: 'Rename', action: 'rename' });
+    items.push({ label: 'Delete', action: 'delete', danger: true });
+  }
+  if (copyBuffer) {
+    items.push({ sep: true });
+    var opLabel = copyBuffer.isCut ? 'Move' : 'Paste';
+    items.push({ label: opLabel + ' "' + copyBuffer.path.split('/').pop() + '" here', action: 'paste' });
+  }
   items.forEach(function(item) {
+    if (item.sep) {
+      var sep = document.createElement('div');
+      sep.style.cssText = 'height:1px;background:#2d2f33;margin:3px 6px;';
+      menuEl.appendChild(sep);
+      return;
+    }
     var row = document.createElement('div');
     row.textContent = item.label;
     row.style.cssText = 'padding:6px 12px;cursor:pointer;border-radius:4px;font-size:12px;' + (item.danger ? 'color:#f44747;' : '');
@@ -333,10 +510,43 @@ function showMenu(pi, x, y) {
     row.onmouseleave = function() { this.style.background = ''; };
     row.onclick = function() {
       hideMenu();
-      var sel = panes[pi].sel;
+      if (item.action === 'paste') {
+        pasteFile(pi);
+        return;
+      }
+      if (item.action === 'newfile') {
+        startCreate(pi, 'file');
+        return;
+      }
+      if (item.action === 'newfolder') {
+        startCreate(pi, 'dir');
+        return;
+      }
       if (!sel) return;
       if (item.action === 'open') {
         api('open_file', { path: sel }).catch(function(){});
+      } else if (item.action === 'copypath') {
+        navigator.clipboard.writeText(sel).then(function() {
+          var st = $('st' + pi);
+          st.innerHTML = '<span style="color:var(--accent)">Path copied</span>';
+          setTimeout(function() { renderPane(pi); }, 2000);
+        }).catch(function() { alert('Failed to copy path'); });
+      } else if (item.action === 'copy') {
+        copyBuffer = { path: sel, isCut: false };
+        updateClipBadge();
+        var st = $('st' + pi);
+        st.innerHTML = '<span style="color:var(--accent)">📋 Copied "' + sel.split('/').pop() + '"</span>';
+        setTimeout(function() { renderPane(pi); }, 2000);
+        debug('File copied: ' + sel);
+      } else if (item.action === 'cut') {
+        copyBuffer = { path: sel, isCut: true };
+        updateClipBadge();
+        var st = $('st' + pi);
+        st.innerHTML = '<span style="color:var(--accent)">✂ Cut "' + sel.split('/').pop() + '" — paste elsewhere</span>';
+        setTimeout(function() { renderPane(pi); }, 2500);
+        debug('File cut: ' + sel);
+      } else if (item.action === 'rename') {
+        startRenameInline(pi, sel);
       } else if (item.action === 'delete') {
         if (confirm('Delete "' + sel.split('/').pop() + '"?')) {
           api('delete_item', { path: sel }).then(function() { loadDir(pi, panes[pi].path); }).catch(function(err) { alert('Failed: ' + err); });
@@ -348,17 +558,120 @@ function showMenu(pi, x, y) {
   document.body.appendChild(menuEl);
   setTimeout(function() { document.addEventListener('click', hideMenu, { once: true }); }, 0);
 }
+
+function pasteFile(pi) {
+  if (!copyBuffer) return;
+  var src = copyBuffer.path;
+  var destDir = panes[pi].path;
+  var name = src.split('/').pop();
+  var dest = destDir === '~' ? name : (destDir + '/' + name);
+  var isCut = copyBuffer.isCut;
+  api('copy_file', { src: src, dest: dest }).then(function() {
+    debug((isCut ? 'Moved: ' : 'Pasted: ') + name + ' to ' + destDir);
+    var st = $('st' + pi);
+    st.innerHTML = '<span style="color:var(--accent)">' + (isCut ? '✂ Moved' : '📋 Pasted') + ' "' + name + '"</span>';
+    setTimeout(function() { renderPane(pi); }, 2000);
+    if (isCut) {
+      // Delete original after successful copy
+      api('delete_item', { path: src }).then(function() {
+        loadDir(pi, destDir);
+      }).catch(function() {
+        loadDir(pi, destDir);
+      });
+    } else {
+      loadDir(pi, destDir);
+    }
+    copyBuffer = null;
+    updateClipBadge();
+  }).catch(function(err) {
+    debug('Copy failed: ' + err);
+    var st = $('st' + pi);
+    st.innerHTML = '<span class="err">Paste failed: ' + err + '</span>';
+    setTimeout(function() { renderPane(pi); }, 3000);
+  });
+}
 function hideMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
+
+// ── Inline rename ──
+function startRenameInline(pi, oldPath) {
+  var name = oldPath.split('/').pop();
+  var row = document.querySelector('#list' + pi + ' .file-row[data-path="' + oldPath.replace(/"/g, '&quot;') + '"]');
+  if (!row) return;
+  var nameSpan = row.querySelector('.name');
+  var oldName = nameSpan.textContent;
+  nameSpan.innerHTML = '<input value="' + oldName.replace(/"/g, '&quot;') + '" style="width:100%;background:#282a2e;border:1px solid #4a9eff;border-radius:3px;color:#d4d4d4;font:12px -apple-system,sans-serif;padding:0 4px;outline:none">';
+  var inp = nameSpan.querySelector('input');
+  inp.focus();
+  inp.select();
+
+  function finish(cancel) {
+    if (cancel) { nameSpan.textContent = oldName; return; }
+    var newName = inp.value.trim();
+    if (!newName || newName === oldName) { nameSpan.textContent = oldName; return; }
+    var parentDir = oldPath.substring(0, oldPath.lastIndexOf('/')) || (oldPath.startsWith('/') ? '/' : '~');
+    api('rename_item', { oldPath: oldPath, newName: newName }).then(function() {
+      var st = $('st' + pi);
+      st.innerHTML = '<span style="color:var(--accent)">Renamed to "' + newName + '"</span>';
+      loadDir(pi, panes[pi].path);
+    }).catch(function(err) {
+      nameSpan.textContent = oldName;
+      var st = $('st' + pi);
+      st.innerHTML = '<span class="err">Rename failed: ' + err + '</span>';
+    });
+  }
+
+  inp.onkeydown = function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); finish(false); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(true); }
+  };
+  inp.onblur = function() { finish(false); };
+}
 
 // ── Keyboard ──
 document.addEventListener('keydown', function(e) {
+  var isInput = !!e.target.closest('input');
   if (e.metaKey || e.ctrlKey) {
     var n = parseInt(e.key);
     if (n >= 1 && n <= 4) { e.preventDefault(); activatePane(n - 1); }
     if (e.key === 'd' || e.key === 'D') { e.preventDefault(); var d = document.getElementById('debug'); d.style.display = d.style.display === 'none' ? 'block' : 'none'; }
+    // ⌘C = copy file, ⌘⇧C = copy path
+    if ((e.key === 'c' || e.key === 'C') && !isInput) {
+      e.preventDefault();
+      var sel = panes[active].sel;
+      if (sel) {
+        if (e.shiftKey) {
+          navigator.clipboard.writeText(sel).then(function() {
+            flashSt(active, 'Path copied');
+          }).catch(function(){});
+        } else {
+          copyBuffer = { path: sel, isCut: false };
+          flashSt(active, '📋 Copied "' + sel.split('/').pop() + '"');
+          updateClipBadge();
+        }
+      }
+    }
+    // ⌘X = cut
+    if ((e.key === 'x' || e.key === 'X') && !isInput) {
+      e.preventDefault();
+      var sel = panes[active].sel;
+      if (sel) {
+        copyBuffer = { path: sel, isCut: true };
+        flashSt(active, '✂ Cut "' + sel.split('/').pop() + '"');
+        updateClipBadge();
+      }
+    }
+    // ⌘V = paste
+    if ((e.key === 'v' || e.key === 'V') && !isInput) {
+      e.preventDefault();
+      if (copyBuffer) pasteFile(active);
+    }
   }
   if (e.key === 'Escape') hideMenu();
-  if (e.key === 'Backspace' && !e.target.closest('input')) {
+  if (e.key === 'Enter' && !isInput) {
+    var sel = panes[active].sel;
+    if (sel) startRenameInline(active, sel);
+  }
+  if (e.key === 'Backspace' && !isInput) {
     var p = panes[active];
     if (p.sel) {
       var name = p.sel.split('/').pop();

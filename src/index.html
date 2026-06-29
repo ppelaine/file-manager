@@ -33,6 +33,7 @@
   }
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{height:100%;overflow:hidden;background:var(--bg-root);color:var(--text-primary);font-family:var(--font);font-size:12.5px;line-height:1.5;user-select:none;-webkit-user-select:none}
+  body{display:flex;flex-direction:column}
 
   /* Toolbar */
   .toolbar{display:flex;align-items:center;height:32px;padding:0 10px;background:var(--bg-surface);border-bottom:1px solid var(--border);gap:8px;flex-shrink:0}
@@ -43,7 +44,7 @@
   .badge{font-size:10px;color:var(--accent);margin-left:auto}
 
   /* Grid */
-  .grid{flex:1;display:grid;grid-template-columns:1fr 1px 1fr;grid-template-rows:1fr 1px 1fr;position:relative}
+  .grid{flex:1;display:grid;grid-template-columns:1fr 1px 1fr;grid-template-rows:1fr 1px 1fr;position:relative;min-height:0}
   .pane{background:var(--bg-root);display:flex;flex-direction:column;overflow:hidden;border:2px solid var(--border);transition:border-color .12s}
   .pane.active{border-color:var(--border-active);z-index:2}
   .divider-v{grid-row:1/4;grid-column:2;cursor:col-resize;background:var(--border);z-index:5}
@@ -121,6 +122,7 @@
   <span class="hint"><kbd>⌘1</kbd>-<kbd>⌘4</kbd> panes</span>
   <span class="sep"></span>
   <span class="hint">←→↑↓ nav</span>
+  <span class="badge" id="clipBadge" style="display:none;color:var(--accent)"></span>
   <span class="badge" id="buildBadge">loading…</span>
 </div>
 
@@ -207,6 +209,20 @@ function mockInvoke(cmd, args) {
         resolve(null);
       } else if (cmd === 'rename_item') {
         resolve(null);
+      } else if (cmd === 'copy_file') {
+        const src = args.src || '';
+        const dest = args.dest || '';
+        const srcName = src.split('/').pop();
+        const destDir = dest.replace(new RegExp('/' + srcName + '$'), '');
+        const srcDir = src.replace(new RegExp('/' + srcName + '$'), '');
+        if (mockFS[srcDir]) {
+          const entry = mockFS[srcDir].find(e => e.name === srcName);
+          if (entry) {
+            if (!mockFS[destDir]) mockFS[destDir] = [];
+            mockFS[destDir].unshift({...entry, name: srcName});
+          }
+        }
+        resolve(null);
       } else if (cmd === 'open_file') {
         console.log('Would open:', path);
         resolve(null);
@@ -225,7 +241,7 @@ const panes = [
   { path: '~', entries: [], expanded: {}, selected: null, sort: 'name', asc: true, loading: false, error: null },
 ];
 let activePane = 0;
-let clipboard = null;
+let clipboard = null; // {entry, operation: 'copy'|'cut'}
 let ctxTarget = null;
 const history = [[],[],[],[]];
 const fwdStack = [[],[],[],[]];
@@ -513,16 +529,65 @@ async function deleteSelected(pi) {
   } catch(err) { flashStatus(pi, 'Error: '+String(err)); }
 }
 
+// ── Inline rename ──
+function startRename(pi, entry) {
+  setActive(pi);
+  // Find the file row for this entry
+  const fa = document.getElementById('pane'+pi).querySelector('.file-area');
+  const row = fa.querySelector(`.file-row[data-path="${escAttr(entry.path)}"]`);
+  if (!row) return;
+  const nameSpan = row.querySelector('.file-name');
+  const oldName = entry.name;
+  const oldHtml = nameSpan.innerHTML;
+  nameSpan.innerHTML = `<input class="rename-input" value="${escAttr(oldName)}" style="flex:1;height:20px;background:var(--bg-input);border:1px solid var(--accent);border-radius:3px;color:var(--text-primary);font-family:var(--font);font-size:11px;padding:0 6px;outline:none;min-width:0">`;
+  const inp = nameSpan.querySelector('input');
+  inp.focus();
+  inp.select();
+
+  const finish = async (cancel) => {
+    if (cancel) {
+      nameSpan.innerHTML = oldHtml;
+      return;
+    }
+    const newName = inp.value.trim();
+    if (!newName || newName === oldName) {
+      nameSpan.innerHTML = oldHtml;
+      return;
+    }
+    const parentDir = entry.path.substring(0, entry.path.lastIndexOf('/')) || (entry.path.startsWith('/') ? '/' : '~');
+    const fullNewPath = parentDir === '~' ? newName : parentDir + '/' + newName;
+    try {
+      await invoke('rename_item', {oldPath: entry.path, newName});
+      flashStatus(pi, `Renamed to "${newName}"`);
+      await loadDir(pi, panes[pi].path);
+    } catch(err) {
+      flashStatus(pi, `Rename failed: ${String(err)}`);
+      nameSpan.innerHTML = oldHtml;
+    }
+  };
+
+  inp.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(false); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(true); }
+  };
+  inp.onblur = () => finish(false);
+}
+
+function escAttr(s) { return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
 // ── Context Menu ──
 function showCtx(x, y, pi, entry) {
   ctxTarget = {pi, entry};
   const menu = document.getElementById('ctxMenu');
   const hasSel = !!entry;
+  const isDir = entry && entry.is_dir;
   menu.innerHTML = `
-    <div class="ctx-item${!hasSel?' disabled':''}" data-action="open">↗ Open<span class="sc">⌘O</span></div>
+    <div class="ctx-item${!hasSel?' disabled':''}" data-action="open">↗ Open<span class="sc">⏎</span></div>
     <div class="ctx-sep"></div>
     <div class="ctx-item${!hasSel?' disabled':''}" data-action="copy">📋 Copy<span class="sc">⌘C</span></div>
-    <div class="ctx-item${!clipboard?' disabled':''}" data-action="paste">📄 Paste<span class="sc">⌘V</span></div>
+    <div class="ctx-item${!hasSel?' disabled':''}" data-action="cut">✂ Cut<span class="sc">⌘X</span></div>
+    <div class="ctx-item${!hasSel?' disabled':''}" data-action="copy-path">📄 Copy Path</div>
+    <div class="ctx-item${!clipboard?' disabled':''}" data-action="paste">📥 Paste<span class="sc">⌘V</span></div>
     <div class="ctx-sep"></div>
     <div class="ctx-item" data-action="new-file">📝 New File<span class="sc">⌘N</span></div>
     <div class="ctx-item" data-action="new-folder">📁 New Folder</div>
@@ -533,32 +598,68 @@ function showCtx(x, y, pi, entry) {
   `;
   menu.style.display = 'block';
   menu.style.left = Math.min(x, innerWidth-200) + 'px';
-  menu.style.top = Math.min(y, innerHeight-280) + 'px';
+  menu.style.top = Math.min(y, innerHeight-350) + 'px';
 
   menu.querySelectorAll('.ctx-item:not(.disabled)').forEach(item => {
     item.onclick = () => ctxAction(item.dataset.action);
   });
 }
 function hideCtx() { document.getElementById('ctxMenu').style.display = 'none'; ctxTarget = null; }
+function ctxActionDirect(action, pi, entry) {
+  // Direct action without context menu target (for keyboard shortcuts)
+  const saved = ctxTarget;
+  ctxTarget = {pi, entry};
+  ctxAction(action);
+  ctxTarget = saved;
+}
 async function ctxAction(action) {
   if (!ctxTarget) return;
   const {pi, entry} = ctxTarget;
+  const destDir = panes[pi].path;
   switch(action) {
     case 'open':
       if (entry && !entry.is_dir) { await invoke('open_file', {path: entry.path}).catch(()=>{}); flashStatus(pi, `Opening "${entry.path.split('/').pop()}"…`); }
       else if (entry && entry.is_dir) navigateTo(pi, entry.path);
       break;
-    case 'copy': clipboard = entry; showToast(`Copied "${entry.path.split('/').pop()}"`); break;
+    case 'copy':
+      if (!entry) return;
+      clipboard = {entry, operation: 'copy'};
+      updateClipBadge();
+      showToast(`Copied "${entry.path.split('/').pop()}"`);
+      break;
+    case 'cut':
+      if (!entry) return;
+      clipboard = {entry, operation: 'cut'};
+      updateClipBadge();
+      showToast(`Cut "${entry.path.split('/').pop()}" — paste elsewhere`);
+      break;
+    case 'copy-path':
+      if (!entry) return;
+      try { await navigator.clipboard.writeText(entry.path); showToast('Path copied'); } catch(e) { showToast('Copy failed'); }
+      break;
     case 'paste':
-      if (clipboard) {
-        flashStatus(pi, `Pasted "${clipboard.path.split('/').pop()}"`);
-        clipboard = null;
+      if (!clipboard) return;
+      const srcEntry = clipboard.entry;
+      const srcName = srcEntry.path.split('/').pop();
+      const destPath = destDir === '~' ? srcName : destDir + '/' + srcName;
+      try {
+        await invoke('copy_file', {src: srcEntry.path, dest: destPath});
+        if (clipboard.operation === 'cut') {
+          try { await invoke('delete_item', {path: srcEntry.path}); } catch(e) { /* best effort */ }
+        }
+        flashStatus(pi, `${clipboard.operation==='cut'?'Moved':'Pasted'} "${srcName}"`);
+        await loadDir(pi, destDir);
+      } catch(err) {
+        flashStatus(pi, `Paste failed: ${String(err)}`);
       }
+      clipboard = null;
+      updateClipBadge();
       break;
     case 'new-file': startCreate(pi, 'file'); break;
     case 'new-folder': startCreate(pi, 'folder'); break;
     case 'rename':
-      if (entry) flashStatus(pi, `Rename not implemented in v1`);
+      if (!entry) return;
+      startRename(pi, entry);
       break;
     case 'delete': deleteSelected(pi); break;
   }
@@ -577,6 +678,15 @@ function showToast(msg) {
   t.textContent = msg; t.classList.remove('hidden');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add('hidden'), 2000);
+}
+function updateClipBadge() {
+  const b = document.getElementById('clipBadge');
+  if (clipboard) {
+    b.style.display = '';
+    b.textContent = `${clipboard.operation==='cut'?'✂':'📋'} ${clipboard.entry.path.split('/').pop()}`;
+  } else {
+    b.style.display = 'none';
+  }
 }
 function flashStatus(pi, msg) {
   const status = document.getElementById('pane'+pi).querySelector('.pane-status');
@@ -687,14 +797,48 @@ function setupDivider() {
 
 // ── Keyboard ──
 document.addEventListener('keydown', (e) => {
+  const isInput = !!e.target.closest('input');
   if (e.metaKey && ['1','2','3','4'].includes(e.key)) {
     e.preventDefault();
     setActive(parseInt(e.key)-1);
   }
-  if (e.key === 'Escape') hideCtx();
-  if (e.key === 'Backspace' && !e.target.closest('input')) {
+  // ⌘C = copy, ⌘X = cut, ⌘V = paste
+  if (e.metaKey && e.key === 'c' && !isInput) {
+    e.preventDefault();
+    const sel = panes[activePane].selected;
+    if (sel) {
+      const entry = panes[activePane].entries.find(x => x.path === sel);
+      if (entry) ctxActionDirect('copy', activePane, entry);
+    }
+  }
+  if (e.metaKey && e.key === 'x' && !isInput) {
+    e.preventDefault();
+    const sel = panes[activePane].selected;
+    if (sel) {
+      const entry = panes[activePane].entries.find(x => x.path === sel);
+      if (entry) ctxActionDirect('cut', activePane, entry);
+    }
+  }
+  if (e.metaKey && e.key === 'v' && !isInput) {
+    e.preventDefault();
+    if (clipboard) ctxActionDirect('paste', activePane, null);
+  }
+  if (e.key === 'Escape') {
+    hideCtx();
+    // Also cancel any inline rename
+    document.querySelectorAll('.rename-input').forEach(inp => inp.blur());
+  }
+  if (e.key === 'Backspace' && !isInput) {
     e.preventDefault();
     deleteSelected(activePane);
+  }
+  if (e.key === 'Enter' && !isInput) {
+    e.preventDefault();
+    const sel = panes[activePane].selected;
+    if (sel) {
+      const entry = panes[activePane].entries.find(x => x.path === sel);
+      if (entry) startRename(activePane, entry);
+    }
   }
 });
 

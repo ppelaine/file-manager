@@ -5,9 +5,10 @@ interface ContextMenuProps {
   target: ContextMenuTarget;
   onAction: (action: string, pane: number, entryPath: string | null) => void;
   onClose: () => void;
+  hasClipboard?: boolean;
 }
 
-export function ContextMenu({ target, onAction, onClose }: ContextMenuProps) {
+export function ContextMenu({ target, onAction, onClose, hasClipboard }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const hasEntry = !!target.entry;
 
@@ -29,13 +30,17 @@ export function ContextMenu({ target, onAction, onClose }: ContextMenuProps) {
 
   // Clamp position to viewport
   const menuWidth = 190;
-  const menuHeight = 210;
+  const menuHeight = hasClipboard ? 330 : 300;
   const x = Math.min(target.x, window.innerWidth - menuWidth);
   const y = Math.min(target.y, window.innerHeight - menuHeight);
 
   const items: { action: string; label: string; icon: string; shortcut?: string; danger?: boolean }[] = [
     { action: "open", label: "Open", icon: "↗", shortcut: "⏎" },
-    { action: "copy-path", label: "Copy Path", icon: "📋", shortcut: "⌘C" },
+    { action: "sep", label: "", icon: "" },
+    { action: "copy", label: "Copy", icon: "📋", shortcut: "⌘C" },
+    { action: "cut", label: "Cut", icon: "✂", shortcut: "⌘X" },
+    { action: "copy-path", label: "Copy Path", icon: "📄", shortcut: "⌘⇧C" },
+    { action: "paste", label: "Paste", icon: "📥", shortcut: "⌘V" },
     { action: "sep", label: "", icon: "" },
     { action: "new-file", label: "New File", icon: "📄", shortcut: "⌘N" },
     { action: "new-folder", label: "New Folder", icon: "📁", shortcut: "⌘⇧N" },
@@ -59,9 +64,10 @@ export function ContextMenu({ target, onAction, onClose }: ContextMenuProps) {
           );
         }
 
-        // Disable item-specific actions when no entry selected
-        const needsEntry = ["open", "copy-path", "rename", "delete"].includes(item.action);
-        const disabled = needsEntry && !hasEntry;
+        // Determine if this item should be disabled
+        const needsEntry = ["open", "copy-path", "rename", "delete", "copy", "cut"].includes(item.action);
+        const needsClipboard = item.action === "paste";
+        const disabled = (needsEntry && !hasEntry) || (needsClipboard && !hasClipboard);
 
         return (
           <div
